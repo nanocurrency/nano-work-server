@@ -1,15 +1,15 @@
+extern crate blake2;
+extern crate byteorder;
 extern crate clap;
+extern crate digest;
 extern crate futures;
 extern crate hex;
 extern crate hyper;
 extern crate ocl;
-#[macro_use]
-extern crate serde_json;
-extern crate blake2;
-extern crate byteorder;
-extern crate digest;
 extern crate parking_lot;
 extern crate rand;
+#[macro_use]
+extern crate serde_json;
 
 mod gpu;
 
@@ -19,6 +19,7 @@ use std::process;
 use std::sync::Arc;
 use std::thread;
 use std::cell::RefCell;
+use std::sync::atomic::{self, AtomicBool};
 
 use futures::future::{self, Either, Future};
 use futures::sync::oneshot;
@@ -64,6 +65,7 @@ enum WorkError {
 struct WorkState {
     root: [u8; 32],
     callback: Option<oneshot::Sender<Result<[u8; 8], WorkError>>>,
+    task_complete: Arc<AtomicBool>,
     unsuccessful_workers: usize,
     future_work: VecDeque<([u8; 32], oneshot::Sender<Result<[u8; 8], WorkError>>)>,
 }
@@ -74,6 +76,7 @@ impl WorkState {
             if let Some((root, callback)) = self.future_work.pop_front() {
                 self.root = root;
                 self.callback = Some(callback);
+                self.task_complete = Arc::new(AtomicBool::new(false));
                 cond_var.notify_all();
             }
         }
@@ -105,9 +108,7 @@ impl RpcService {
             future::poll_fn(move || match work_state.0.try_lock() {
                 Some(mut state) => {
                     if let Some(callback_send) = callback_send.borrow_mut().take() {
-                        state
-                            .future_work
-                            .push_back((root, callback_send));
+                        state.future_work.push_back((root, callback_send));
                         state.set_task(&work_state.1);
                     }
                     Ok(Async::Ready(()))
@@ -127,6 +128,7 @@ impl RpcService {
                         if state.future_work[i].0 == root {
                             if let Some((_, callback)) = state.future_work.remove(i) {
                                 let _ = callback.send(Err(WorkError::Canceled));
+                                state.task_complete.store(true, atomic::Ordering::Relaxed);
                                 continue;
                             }
                         }
@@ -135,6 +137,7 @@ impl RpcService {
                     if state.root == root {
                         if let Some(callback) = state.callback.take() {
                             let _ = callback.send(Err(WorkError::Canceled));
+                            state.task_complete.store(true, atomic::Ordering::Relaxed);
                             state.set_task(&self.work_state.1);
                         }
                     }
@@ -401,13 +404,15 @@ fn main() {
         let work_state = work_state.clone();
         let mut rng: rand::XorShiftRng = rand::thread_rng().gen();
         let mut root = [0u8; 32];
+        let mut task_complete = Arc::new(AtomicBool::new(true));
         let handle = thread::spawn(move || loop {
-            {
+            if task_complete.load(atomic::Ordering::Relaxed) {
                 let mut state = work_state.0.lock();
                 while state.callback.is_none() {
                     work_state.1.wait(&mut state);
                 }
                 root = state.root;
+                task_complete = state.task_complete.clone();
             }
             let mut out: [u8; 8] = rng.gen();
             for _ in 0..(1 << 20) {
@@ -416,6 +421,7 @@ fn main() {
                     if root == state.root {
                         if let Some(callback) = state.callback.take() {
                             let _ = callback.send(Ok(out));
+                            state.task_complete.store(true, atomic::Ordering::Relaxed);
                             state.set_task(&work_state.1);
                         }
                     }
@@ -432,46 +438,49 @@ fn main() {
         });
         worker_handles.push(handle.thread().clone());
     }
-    for mut gpu in gpus.into_iter() {
+    for (gpu_i, mut gpu) in gpus.into_iter().enumerate() {
         let mut failed = false;
         let mut rng: rand::XorShiftRng = rand::thread_rng().gen();
         let mut root = [0u8; 32];
         let work_state = work_state.clone();
+        let mut task_complete = Arc::new(AtomicBool::new(true));
+        let mut consecutive_gpu_errors = 0;
+        let mut consecutive_gpu_invalid_work_errors = 0;
         let handle = thread::spawn(move || loop {
-            {
+            if failed || task_complete.load(atomic::Ordering::Relaxed) {
                 let mut state = work_state.0.lock();
                 if failed {
                     state.unsuccessful_workers += 1;
                     if state.unsuccessful_workers == n_workers {
                         if let Some(callback) = state.callback.take() {
                             let _ = callback.send(Err(WorkError::Errored));
+                            state.task_complete.store(true, atomic::Ordering::Relaxed);
                             state.set_task(&work_state.1);
                         }
                     }
-                }
-                if failed {
                     work_state.1.wait(&mut state);
                 }
                 while state.callback.is_none() {
                     work_state.1.wait(&mut state);
                 }
                 root = state.root;
+                task_complete = state.task_complete.clone();
                 if failed {
                     state.unsuccessful_workers -= 1;
                 }
+                if let Err(err) = gpu.set_root(&root) {
+                    eprintln!(
+                        "Failed to set GPU {}'s task, abandoning it for this work: {:?}",
+                        gpu_i, err,
+                    );
+                    failed = true;
+                    continue;
+                }
                 failed = false;
+                consecutive_gpu_errors = 0;
             }
             let attempt = rng.gen();
-            if let Err(err) = gpu.set_root(&root) {
-                eprintln!(
-                    "Failed to set GPU task, abandoning GPU for this work: {:?}",
-                    err
-                );
-                failed = true;
-                continue;
-            }
             let mut out = [0u8; 8];
-            let mut consecutive_gpu_errors = 0;
             match gpu.try(&mut out, attempt) {
                 Ok(true) => {
                     if work_valid(root, out) {
@@ -479,32 +488,48 @@ fn main() {
                         if root == state.root {
                             if let Some(callback) = state.callback.take() {
                                 let _ = callback.send(Ok(out));
+                                state.task_complete.store(true, atomic::Ordering::Relaxed);
                                 state.set_task(&work_state.1);
                             }
                         }
+                        consecutive_gpu_errors = 0;
+                        consecutive_gpu_invalid_work_errors = 0;
                     } else {
                         eprintln!(
-                            "GPU returned invalid work {} for root {}",
+                            "GPU {} returned invalid work {} for root {}",
+                            gpu_i,
                             hex::encode(&out),
-                            hex::encode_upper(&root)
+                            hex::encode_upper(&root),
                         );
-                        consecutive_gpu_errors += 1;
+                        if consecutive_gpu_invalid_work_errors >= 3 {
+                            eprintln!("GPU {} returned invalid work 3 consecutive times, abandoning it for this work", gpu_i);
+                            failed = true;
+                        } else {
+                            consecutive_gpu_errors += 1;
+                            consecutive_gpu_invalid_work_errors += 1;
+                        }
                     }
                 }
-                Ok(false) => {}
+                Ok(false) => {
+                    consecutive_gpu_errors = 0;
+                }
                 Err(err) => {
-                    eprintln!("Error computing work on GPU: {:?}", err);
+                    eprintln!("Error computing work on GPU {}: {:?}", gpu_i, err);
                     if let Err(err) = gpu.reset_bufs() {
                         eprintln!(
-                            "Failed to reset GPU buffers, abandoning GPU for this work: {:?}",
-                            err
+                            "Failed to reset GPU {}'s buffers, abandoning it for this work: {:?}",
+                            gpu_i, err,
                         );
+                        failed = true;
                     }
                     consecutive_gpu_errors += 1;
                 }
             }
             if consecutive_gpu_errors >= 3 {
-                eprintln!("3 consecutive GPU errors, abandoning GPU for this work");
+                eprintln!(
+                    "3 consecutive GPU {} errors, abandoning it for this work",
+                    gpu_i,
+                );
                 failed = true;
             }
         });
