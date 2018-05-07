@@ -1,6 +1,6 @@
 [package]
 name = "nano-work-server"
-version = "0.1.1"
+version = "0.1.2"
 authors = ["Lee Bousfield <ljbousfield@gmail.com>"]
 license = "BSD-2-Clause"
 repository = "https://github.com/nanocurrency/nano-work-server"

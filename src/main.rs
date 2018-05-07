@@ -449,6 +449,9 @@ fn main() {
         let handle = thread::spawn(move || loop {
             if failed || task_complete.load(atomic::Ordering::Relaxed) {
                 let mut state = work_state.0.lock();
+                if root != state.root {
+                    failed = false;
+                }
                 if failed {
                     state.unsuccessful_workers += 1;
                     if state.unsuccessful_workers == n_workers {
