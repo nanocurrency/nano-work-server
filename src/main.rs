@@ -18,12 +18,11 @@ use std::collections::VecDeque;
 use std::process;
 use std::sync::Arc;
 use std::thread;
-use std::cell::RefCell;
 use std::sync::atomic::{self, AtomicBool};
 
 use futures::future::{self, Either, Future};
 use futures::sync::oneshot;
-use futures::{Async, Stream};
+use futures::Stream;
 
 use hyper::server::{Http, Request, Response, Service};
 use hyper::StatusCode;
@@ -101,50 +100,36 @@ enum HexJsonError {
 }
 
 impl RpcService {
-    fn generate_work(self, root: [u8; 32]) -> Box<Future<Item = [u8; 8], Error = WorkError>> {
+    fn generate_work(&self, root: [u8; 32]) -> Box<Future<Item = [u8; 8], Error = WorkError>> {
+        let mut state = self.work_state.0.lock();
         let (callback_send, callback_recv) = oneshot::channel();
-        let callback_send = RefCell::new(Some(callback_send));
-        let work_state = self.work_state.clone();
+        state.future_work.push_back((root, callback_send));
+        state.set_task(&self.work_state.1);
         Box::new(
-            future::poll_fn(move || match work_state.0.try_lock() {
-                Some(mut state) => {
-                    if let Some(callback_send) = callback_send.borrow_mut().take() {
-                        state.future_work.push_back((root, callback_send));
-                        state.set_task(&work_state.1);
-                    }
-                    Ok(Async::Ready(()))
-                }
-                None => Ok(Async::NotReady),
-            }).and_then(move |_| callback_recv.map_err(|_| WorkError::Errored))
+            callback_recv
+                .map_err(|_| WorkError::Errored)
                 .and_then(|x| x),
         )
     }
 
-    fn cancel_work(self, root: [u8; 32]) -> Box<Future<Item = (), Error = ()>> {
-        Box::new(future::poll_fn(move || {
-            match self.work_state.0.try_lock() {
-                Some(mut state) => {
-                    let mut i = 0;
-                    while i < state.future_work.len() {
-                        if state.future_work[i].0 == root {
-                            if let Some((_, callback)) = state.future_work.remove(i) {
-                                let _ = callback.send(Err(WorkError::Canceled));
-                                continue;
-                            }
-                        }
-                        i += 1;
-                    }
-                    if state.root == root {
-                        if let Some(callback) = state.callback.take() {
-                            let _ = callback.send(Err(WorkError::Canceled));
-                            state.set_task(&self.work_state.1);
-                        }
-                    }
-                    Ok(Async::Ready(()))
+    fn cancel_work(&self, root: [u8; 32]) {
+        let mut state = self.work_state.0.lock();
+        let mut i = 0;
+        while i < state.future_work.len() {
+            if state.future_work[i].0 == root {
+                if let Some((_, callback)) = state.future_work.remove(i) {
+                    let _ = callback.send(Err(WorkError::Canceled));
+                    continue;
                 }
-                None => Ok(Async::NotReady),
             }
-        }))
+            i += 1;
+        }
+        if state.root == root {
+            if let Some(callback) = state.callback.take() {
+                let _ = callback.send(Err(WorkError::Canceled));
+                state.set_task(&self.work_state.1);
+            }
+        }
     }
 
     fn parse_hex_json(value: &Value, out: &mut [u8]) -> Result<(), HexJsonError> {
@@ -272,10 +257,10 @@ impl RpcService {
                     )),
                 }))
             }
-            RpcCommand::WorkCancel(root) => Box::new(
-                self.cancel_work(root)
-                    .then(|_| Ok((StatusCode::Ok, json!({})))),
-            ),
+            RpcCommand::WorkCancel(root) => {
+                self.cancel_work(root);
+                Box::new(Box::new(future::ok((StatusCode::Ok, json!({})))))
+            }
             RpcCommand::WorkValidate(root, work) => {
                 let valid = work_valid(root, work);
                 Box::new(future::ok((
