@@ -136,8 +136,9 @@ impl RpcService {
                     if state.root == root {
                         if let Some(callback) = state.callback.take() {
                             let _ = callback.send(Err(WorkError::Canceled));
+                            let task_complete = state.task_complete.clone();
                             state.set_task(&self.work_state.1);
-                            state.task_complete.store(true, atomic::Ordering::Relaxed);
+                            task_complete.store(true, atomic::Ordering::Relaxed);
                         }
                     }
                     Ok(Async::Ready(()))
@@ -420,8 +421,9 @@ fn main() {
                     if root == state.root {
                         if let Some(callback) = state.callback.take() {
                             let _ = callback.send(Ok(out));
+                            task_complete = state.task_complete.clone();
                             state.set_task(&work_state.1);
-                            state.task_complete.store(true, atomic::Ordering::Relaxed);
+                            task_complete.store(true, atomic::Ordering::Relaxed);
                         }
                     }
                     break;
@@ -456,8 +458,9 @@ fn main() {
                     if state.unsuccessful_workers == n_workers {
                         if let Some(callback) = state.callback.take() {
                             let _ = callback.send(Err(WorkError::Errored));
+                            task_complete = state.task_complete.clone();
                             state.set_task(&work_state.1);
-                            state.task_complete.store(true, atomic::Ordering::Relaxed);
+                            task_complete.store(true, atomic::Ordering::Relaxed);
                         }
                     }
                     work_state.1.wait(&mut state);
@@ -490,8 +493,9 @@ fn main() {
                         if root == state.root {
                             if let Some(callback) = state.callback.take() {
                                 let _ = callback.send(Ok(out));
+                                task_complete = state.task_complete.clone();
                                 state.set_task(&work_state.1);
-                                state.task_complete.store(true, atomic::Ordering::Relaxed);
+                                task_complete.store(true, atomic::Ordering::Relaxed);
                             }
                         }
                         consecutive_gpu_errors = 0;
