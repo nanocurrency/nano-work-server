@@ -382,7 +382,7 @@ dependencies = [
 
 [[package]]
 name = "nano-work-server"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "blake2 0.7.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "byteorder 1.2.2 (registry+https://github.com/rust-lang/crates.io-index)",
