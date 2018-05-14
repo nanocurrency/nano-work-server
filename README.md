@@ -9,7 +9,7 @@ To see available command line options, run `nano-work-server --help`.
 
 ## Installation
 
-### OpenCL:
+### OpenCL
 Ubuntu:
 
 ```
@@ -21,11 +21,11 @@ Fedora:
 sudo dnf install ocl-icd-devel
 ```
 
-### Rust:
+### Rust
 ```
 curl https://sh.rustup.rs -sSf | sh
 ```
-### Build and run work server
+### Build and run
 ```
 git clone https://github.com/nanocurrency/nano-work-server.git
 cd nano-work-server
