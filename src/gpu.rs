@@ -1,11 +1,11 @@
 use ocl;
-use ocl::ProQue;
-use ocl::Result;
 use ocl::Buffer;
 use ocl::Platform;
-use ocl::flags::MemFlags;
-use ocl::builders::ProgramBuilder;
+use ocl::ProQue;
+use ocl::Result;
 use ocl::builders::DeviceSpecifier;
+use ocl::builders::ProgramBuilder;
+use ocl::flags::MemFlags;
 
 use byteorder::{ByteOrder, LittleEndian};
 
@@ -18,8 +18,7 @@ pub struct Gpu {
 
 impl Gpu {
     pub fn new(platform_idx: usize, device_idx: usize, threads: usize) -> Result<Gpu> {
-        let mut prog_bldr = ProgramBuilder::new();
-        prog_bldr.src(include_str!("work.cl"));
+        let prog_bldr = ProgramBuilder::new().src(include_str!("work.cl"));
         let platforms = Platform::list();
         if platforms.len() == 0 {
             return Err("No OpenCL platforms exist (check your drivers and OpenCL setup)".into());
@@ -39,35 +38,30 @@ impl Gpu {
             .build()?;
 
         let device = pro_que.device();
-        eprintln!(
-            "Initializing GPU: {} {}",
-            device.vendor().unwrap_or_else(|_| "[unknown]".into()),
-            device.name().unwrap_or_else(|_| "[unknown]".into())
-        );
+        eprintln!("Initializing GPU: {} {}", device.vendor(), device.name());
 
         let attempt = Buffer::<u8>::builder()
             .queue(pro_que.queue().clone())
             .flags(MemFlags::new().read_only().host_write_only())
-            .len(8)
+            .dims(8)
             .build()?;
         let result = Buffer::<u8>::builder()
             .queue(pro_que.queue().clone())
             .flags(MemFlags::new().write_only())
-            .len(8)
+            .dims(8)
             .build()?;
         let root = Buffer::<u8>::builder()
             .queue(pro_que.queue().clone())
             .flags(MemFlags::new().read_only().host_write_only())
-            .len(32)
+            .dims(32)
             .build()?;
 
         let kernel = pro_que
-            .kernel_builder("raiblocks_work")
-            .global_work_size(threads)
-            .arg(&attempt)
-            .arg(&result)
-            .arg(&root)
-            .build()?;
+            .create_kernel("raiblocks_work")?
+            .gws(threads)
+            .arg_buf(&attempt)
+            .arg_buf(&result)
+            .arg_buf(&root);
 
         let mut gpu = Gpu {
             kernel,
