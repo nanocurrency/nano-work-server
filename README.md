@@ -1,4 +1,4 @@
-# DPoW work server
+# Nano work server
 
 This project is a dedicated work server for [the Nano cryptocurrency](https://nano.org/).
 
