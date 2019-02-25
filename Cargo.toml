@@ -1,6 +1,6 @@
 [package]
 name = "nano-work-server"
-version = "0.1.7"
+version = "0.2.0"
 authors = ["Lee Bousfield <ljbousfield@gmail.com>"]
 license = "BSD-2-Clause"
 repository = "https://github.com/nanocurrency/nano-work-server"
@@ -18,3 +18,4 @@ blake2 = "0.7.1"
 digest = "0.7.2"
 byteorder = "1.2.2"
 parking_lot = "0.5.5"
+time = "0.1.39"

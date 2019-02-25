@@ -3,6 +3,7 @@ use ocl::ProQue;
 use ocl::Result;
 use ocl::Buffer;
 use ocl::Platform;
+use ocl::prm::Ulong;
 use ocl::flags::MemFlags;
 use ocl::builders::ProgramBuilder;
 use ocl::builders::DeviceSpecifier;
@@ -61,12 +62,15 @@ impl Gpu {
             .len(32)
             .build()?;
 
+        let difficulty = Ulong::new(0u64);
+
         let kernel = pro_que
             .kernel_builder("raiblocks_work")
             .global_work_size(threads)
             .arg(&attempt)
             .arg(&result)
             .arg(&root)
+            .arg_named("difficulty", &difficulty)
             .build()?;
 
         let mut gpu = Gpu {
@@ -84,9 +88,10 @@ impl Gpu {
         Ok(())
     }
 
-    pub fn set_root(&mut self, root: &[u8]) -> Result<()> {
+    pub fn set_task(&mut self, root: &[u8], difficulty: u64) -> Result<()> {
         self.reset_bufs()?;
         self.root.write(root).enq()?;
+        self.kernel.set_arg("difficulty", Ulong::new(difficulty))?;
         Ok(())
     }
 
