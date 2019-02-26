@@ -357,7 +357,7 @@ fn main() {
                 .long("listen-address")
                 .value_name("ADDR")
                 .default_value("[::1]:7076")
-                .help("Specifies the address to listen on"),
+                .help("Specifies the address to listen on."),
         )
         .arg(
             clap::Arg::with_name("cpu_threads")
@@ -365,7 +365,7 @@ fn main() {
                 .long("cpu-threads")
                 .value_name("THREADS")
                 .default_value("0")
-                .help("Specifies how many CPU threads to use"),
+                .help("Specifies how many CPU threads to use."),
         )
         .arg(
             clap::Arg::with_name("gpu")
@@ -377,6 +377,12 @@ fn main() {
                     "Specifies which GPU(s) to use. THREADS is optional and defaults to 1048576.",
                 ),
         )
+        .arg(
+            clap::Arg::with_name("gpu_local_work_size")
+                .long("gpu-local-work-size")
+                .value_name("N")
+                .help("The GPU local work size. Increasing it may increase performance. For advanced users only."),
+        )
         .get_matches();
     let listen_addr = args.value_of("listen_address")
         .unwrap()
@@ -386,6 +392,12 @@ fn main() {
         .unwrap()
         .parse()
         .expect("Failed to parse CPU threads");
+    let gpu_local_work_size = args
+        .value_of("gpu_local_work_size")
+        .map(|s| s
+            .parse()
+            .expect("Failed to parse GPU local work size option")
+        );
     let gpus: Vec<Gpu> = args.values_of("gpu")
         .map(|x| x.collect())
         .unwrap_or_else(Vec::new)
@@ -410,7 +422,7 @@ fn main() {
             if parts.next().is_some() {
                 panic!("Too many colons in GPU string {:?}", s);
             }
-            Gpu::new(platform, device, threads)
+            Gpu::new(platform, device, threads, gpu_local_work_size)
                 .expect(&format!("Failed to create GPU from string {:?}", s))
         })
         .collect();
