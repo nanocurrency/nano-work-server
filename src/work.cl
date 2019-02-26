@@ -330,7 +330,7 @@ static void ucharcpyglb (uchar * dst, __global uchar const * src, size_t count)
 	}
 }
 	
-__kernel void raiblocks_work (__global uchar const * attempt, __global uchar * result_a, __global uchar * item_a, const ulong difficulty)
+__kernel void nano_work (__global uchar const * attempt, __global uchar * result_a, __global uchar * item_a, const ulong difficulty)
 {
 	int const thread = get_global_id (0);
 	uchar item_l [32];

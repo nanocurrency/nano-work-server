@@ -65,7 +65,7 @@ impl Gpu {
         let difficulty = Ulong::new(0u64);
 
         let kernel = {
-            let mut kernel_builder = pro_que.kernel_builder("raiblocks_work");
+            let mut kernel_builder = pro_que.kernel_builder("nano_work");
             kernel_builder
                 .global_work_size(threads)
                 .arg(&attempt)
