@@ -3,7 +3,6 @@ use ocl::ProQue;
 use ocl::Result;
 use ocl::Buffer;
 use ocl::Platform;
-use ocl::prm::Ulong;
 use ocl::flags::MemFlags;
 use ocl::builders::ProgramBuilder;
 use ocl::builders::DeviceSpecifier;
@@ -62,7 +61,7 @@ impl Gpu {
             .len(32)
             .build()?;
 
-        let difficulty = Ulong::new(0u64);
+        let difficulty = 0u64;
 
         let kernel = {
             let mut kernel_builder = pro_que.kernel_builder("nano_work");
@@ -96,7 +95,7 @@ impl Gpu {
     pub fn set_task(&mut self, root: &[u8], difficulty: u64) -> Result<()> {
         self.reset_bufs()?;
         self.root.write(root).enq()?;
-        self.kernel.set_arg("difficulty", Ulong::new(difficulty))?;
+        self.kernel.set_arg("difficulty", difficulty)?;
         Ok(())
     }
 
