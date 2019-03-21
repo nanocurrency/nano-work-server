@@ -451,7 +451,7 @@ fn main() {
                 task_complete = state.task_complete.clone();
             }
             let mut out: [u8; 8] = rng.gen();
-            for _ in 0..(1 << 20) {
+            for _ in 0..(1 << 18) {
                 if work_valid(root, out, difficulty) {
                     let mut state = work_state.0.lock();
                     if root == state.root {
