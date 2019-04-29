@@ -57,8 +57,9 @@ fn work_value(root: [u8; 32], work: [u8; 8]) -> u64 {
 }
 
 #[inline]
-fn work_valid(root: [u8; 32], work: [u8; 8], difficulty: u64) -> bool {
-    work_value(root, work) >= difficulty
+fn work_valid(root: [u8; 32], work: [u8; 8], difficulty: u64) -> (bool, u64) {
+    let value = work_value(root, work);
+    (value >= difficulty, value)
 }
 
 enum WorkError {
@@ -300,11 +301,12 @@ impl RpcService {
             }
             RpcCommand::WorkValidate(root, work, difficulty) => {
                 println!("Received work_validate");
-                let valid = work_valid(root, work, difficulty);
+                let (valid, value) = work_valid(root, work, difficulty);
                 Box::new(future::ok((
                     StatusCode::Ok,
                     json!({
                         "valid": if valid { "1" } else { "0" },
+                        "value": format!("{:x}", value),
                     }),
                 )))
             }
@@ -452,7 +454,7 @@ fn main() {
             }
             let mut out: [u8; 8] = rng.gen();
             for _ in 0..(1 << 18) {
-                if work_valid(root, out, difficulty) {
+                if work_valid(root, out, difficulty).0 {
                     let mut state = work_state.0.lock();
                     if root == state.root {
                         if let Some(callback) = state.callback.take() {
@@ -522,7 +524,7 @@ fn main() {
             let mut out = [0u8; 8];
             match gpu.try(&mut out, attempt) {
                 Ok(true) => {
-                    if work_valid(root, out, difficulty) {
+                    if work_valid(root, out, difficulty).0 {
                         let mut state = work_state.0.lock();
                         if root == state.root {
                             if let Some(callback) = state.callback.take() {
