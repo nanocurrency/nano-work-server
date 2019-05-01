@@ -8,6 +8,7 @@ extern crate hyper;
 extern crate ocl;
 extern crate parking_lot;
 extern crate rand;
+extern crate time;
 #[macro_use]
 extern crate serde_json;
 
@@ -39,7 +40,12 @@ use byteorder::{ByteOrder, LittleEndian};
 
 use parking_lot::{Condvar, Mutex};
 
+use time::PreciseTime;
+
 use gpu::Gpu;
+
+// Nano's minimum work difficulty, set as default when difficulty not given
+const MIN_DIFFICULTY: u64 = 0xffffffc000000000;
 
 fn work_value(root: [u8; 32], work: [u8; 8]) -> u64 {
     let mut buf = [0u8; 8];
@@ -51,8 +57,9 @@ fn work_value(root: [u8; 32], work: [u8; 8]) -> u64 {
 }
 
 #[inline]
-fn work_valid(root: [u8; 32], work: [u8; 8]) -> bool {
-    work_value(root, work) >= 0xffffffc000000000
+fn work_valid(root: [u8; 32], work: [u8; 8], difficulty: u64) -> (bool, u64) {
+    let value = work_value(root, work);
+    (value >= difficulty, value)
 }
 
 enum WorkError {
@@ -63,18 +70,20 @@ enum WorkError {
 #[derive(Default)]
 struct WorkState {
     root: [u8; 32],
+    difficulty: u64,
     callback: Option<oneshot::Sender<Result<[u8; 8], WorkError>>>,
     task_complete: Arc<AtomicBool>,
     unsuccessful_workers: usize,
-    future_work: VecDeque<([u8; 32], oneshot::Sender<Result<[u8; 8], WorkError>>)>,
+    future_work: VecDeque<([u8; 32], u64, oneshot::Sender<Result<[u8; 8], WorkError>>)>,
 }
 
 impl WorkState {
     fn set_task(&mut self, cond_var: &Condvar) {
         if self.callback.is_none() {
             self.task_complete.store(true, atomic::Ordering::Relaxed);
-            if let Some((root, callback)) = self.future_work.pop_front() {
+            if let Some((root, difficulty, callback)) = self.future_work.pop_front() {
                 self.root = root;
+                self.difficulty = difficulty;
                 self.callback = Some(callback);
                 self.task_complete = Arc::new(AtomicBool::new(false));
                 cond_var.notify_all();
@@ -89,9 +98,9 @@ struct RpcService {
 }
 
 enum RpcCommand {
-    WorkGenerate([u8; 32]),
+    WorkGenerate([u8; 32], u64),
     WorkCancel([u8; 32]),
-    WorkValidate([u8; 32], [u8; 8]),
+    WorkValidate([u8; 32], [u8; 8], u64),
 }
 
 enum HexJsonError {
@@ -100,10 +109,10 @@ enum HexJsonError {
 }
 
 impl RpcService {
-    fn generate_work(&self, root: [u8; 32]) -> Box<Future<Item = [u8; 8], Error = WorkError>> {
+    fn generate_work(&self, root: [u8; 32], difficulty: u64) -> Box<Future<Item = [u8; 8], Error = WorkError>> {
         let mut state = self.work_state.0.lock();
         let (callback_send, callback_recv) = oneshot::channel();
-        state.future_work.push_back((root, callback_send));
+        state.future_work.push_back((root, difficulty, callback_send));
         state.set_task(&self.work_state.1);
         Box::new(
             callback_recv
@@ -117,7 +126,7 @@ impl RpcService {
         let mut i = 0;
         while i < state.future_work.len() {
             if state.future_work[i].0 == root {
-                if let Some((_, callback)) = state.future_work.remove(i) {
+                if let Some((_, _, callback)) = state.future_work.remove(i) {
                     let _ = callback.send(Err(WorkError::Canceled));
                     continue;
                 }
@@ -185,6 +194,27 @@ impl RpcService {
         Ok(out)
     }
 
+    fn parse_difficulty_json(json: &Value) -> Result<u64, Value> {
+        match json.get("difficulty") {
+
+            None => Ok(MIN_DIFFICULTY),
+
+            Some(json) => {
+                let difficulty_str = json.as_str().ok_or(json!({
+                    "error": "Failed to deserialize JSON",
+                    "hint": "Expecting a hex string for difficulty",
+                }))?;
+
+                let difficulty = u64::from_str_radix(difficulty_str, 16).map_err(|_| json!({
+                    "error": "Failed to deserialize JSON",
+                    "hint": "Threshold not a valid unsigned long (u64). Example: 'ffffffc000000000'",
+                }))?;
+
+                Ok(difficulty)
+            },
+        }
+    }
+
     fn parse_json(json: Value) -> Result<RpcCommand, Value> {
         match json.get("action") {
             None => {
@@ -193,20 +223,22 @@ impl RpcService {
                     "hint": "Work field missing",
                 }))
             }
-            Some(action) if action == "work_generate" => {
-                Ok(RpcCommand::WorkGenerate(Self::parse_hash_json(&json)?))
-            }
+            Some(action) if action == "work_generate" => Ok(RpcCommand::WorkGenerate(
+                Self::parse_hash_json(&json)?,
+                Self::parse_difficulty_json(&json)?,
+            )),
             Some(action) if action == "work_cancel" => {
                 Ok(RpcCommand::WorkCancel(Self::parse_hash_json(&json)?))
             }
             Some(action) if action == "work_validate" => Ok(RpcCommand::WorkValidate(
                 Self::parse_hash_json(&json)?,
                 Self::parse_work_json(&json)?,
+                Self::parse_difficulty_json(&json)?,
             )),
             Some(_) => {
                 return Err(json!({
                     "error": "Unknown command",
-                    "hint": "This isn't rai_node, it's nano-work-server. Supported commands: work_generate, work_cancel, and work_validate."
+                    "hint": "Supported commands: work_generate, work_cancel, work_validate"
                 }))
             }
         }
@@ -231,10 +263,15 @@ impl RpcService {
             Ok(r) => r,
             Err(err) => return Box::new(future::ok((StatusCode::BadRequest, err))),
         };
+        let start = PreciseTime::now();
         match command {
-            RpcCommand::WorkGenerate(root) => {
-                Box::new(self.generate_work(root).then(|res| match res {
+            RpcCommand::WorkGenerate(root, difficulty) => {
+                Box::new(self.generate_work(root, difficulty).then(move |res| match res {
                     Ok(work) => {
+                        let end = PreciseTime::now();
+                        println!("work_generate completed in {}ms for difficulty {:#x}",
+                            start.to(end).num_milliseconds(),
+                            difficulty);
                         let work: Vec<u8> = work.iter().rev().cloned().collect();
                         Ok((
                             StatusCode::Ok,
@@ -258,15 +295,18 @@ impl RpcService {
                 }))
             }
             RpcCommand::WorkCancel(root) => {
+                println!("Received work_cancel");
                 self.cancel_work(root);
                 Box::new(Box::new(future::ok((StatusCode::Ok, json!({})))))
             }
-            RpcCommand::WorkValidate(root, work) => {
-                let valid = work_valid(root, work);
+            RpcCommand::WorkValidate(root, work, difficulty) => {
+                println!("Received work_validate");
+                let (valid, value) = work_valid(root, work, difficulty);
                 Box::new(future::ok((
                     StatusCode::Ok,
                     json!({
                         "valid": if valid { "1" } else { "0" },
+                        "value": format!("{:x}", value),
                     }),
                 )))
             }
@@ -312,14 +352,14 @@ fn main() {
     let args = clap::App::new("Nano work server")
         .version("1.0")
         .author("Lee Bousfield <ljbousfield@gmail.com>")
-        .about("Provides a work server for Nano without a full node")
+        .about("Provides a work server for Nano without a full node.")
         .arg(
             clap::Arg::with_name("listen_address")
                 .short("l")
                 .long("listen-address")
                 .value_name("ADDR")
                 .default_value("[::1]:7076")
-                .help("Specifies the address to listen on"),
+                .help("Specifies the address to listen on."),
         )
         .arg(
             clap::Arg::with_name("cpu_threads")
@@ -327,7 +367,7 @@ fn main() {
                 .long("cpu-threads")
                 .value_name("THREADS")
                 .default_value("0")
-                .help("Specifies how many CPU threads to use"),
+                .help("Specifies how many CPU threads to use."),
         )
         .arg(
             clap::Arg::with_name("gpu")
@@ -339,6 +379,12 @@ fn main() {
                     "Specifies which GPU(s) to use. THREADS is optional and defaults to 1048576.",
                 ),
         )
+        .arg(
+            clap::Arg::with_name("gpu_local_work_size")
+                .long("gpu-local-work-size")
+                .value_name("N")
+                .help("The GPU local work size. Increasing it may increase performance. For advanced users only."),
+        )
         .get_matches();
     let listen_addr = args.value_of("listen_address")
         .unwrap()
@@ -348,6 +394,12 @@ fn main() {
         .unwrap()
         .parse()
         .expect("Failed to parse CPU threads");
+    let gpu_local_work_size = args
+        .value_of("gpu_local_work_size")
+        .map(|s| s
+            .parse()
+            .expect("Failed to parse GPU local work size option")
+        );
     let gpus: Vec<Gpu> = args.values_of("gpu")
         .map(|x| x.collect())
         .unwrap_or_else(Vec::new)
@@ -372,7 +424,7 @@ fn main() {
             if parts.next().is_some() {
                 panic!("Too many colons in GPU string {:?}", s);
             }
-            Gpu::new(platform, device, threads)
+            Gpu::new(platform, device, threads, gpu_local_work_size)
                 .expect(&format!("Failed to create GPU from string {:?}", s))
         })
         .collect();
@@ -388,6 +440,7 @@ fn main() {
         let work_state = work_state.clone();
         let mut rng: rand::XorShiftRng = rand::thread_rng().gen();
         let mut root = [0u8; 32];
+        let mut difficulty = 0u64;
         let mut task_complete = Arc::new(AtomicBool::new(true));
         let handle = thread::spawn(move || loop {
             if task_complete.load(atomic::Ordering::Relaxed) {
@@ -396,11 +449,12 @@ fn main() {
                     work_state.1.wait(&mut state);
                 }
                 root = state.root;
+                difficulty = state.difficulty;
                 task_complete = state.task_complete.clone();
             }
             let mut out: [u8; 8] = rng.gen();
-            for _ in 0..(1 << 20) {
-                if work_valid(root, out) {
+            for _ in 0..(1 << 18) {
+                if work_valid(root, out, difficulty).0 {
                     let mut state = work_state.0.lock();
                     if root == state.root {
                         if let Some(callback) = state.callback.take() {
@@ -425,6 +479,7 @@ fn main() {
         let mut failed = false;
         let mut rng: rand::XorShiftRng = rand::thread_rng().gen();
         let mut root = [0u8; 32];
+        let mut difficulty = 0u64;
         let work_state = work_state.clone();
         let mut task_complete = Arc::new(AtomicBool::new(true));
         let mut consecutive_gpu_errors = 0;
@@ -449,11 +504,12 @@ fn main() {
                     work_state.1.wait(&mut state);
                 }
                 root = state.root;
+                difficulty = state.difficulty;
                 task_complete = state.task_complete.clone();
                 if failed {
                     state.unsuccessful_workers -= 1;
                 }
-                if let Err(err) = gpu.set_root(&root) {
+                if let Err(err) = gpu.set_task(&root, difficulty) {
                     eprintln!(
                         "Failed to set GPU {}'s task, abandoning it for this work: {:?}",
                         gpu_i, err,
@@ -468,7 +524,7 @@ fn main() {
             let mut out = [0u8; 8];
             match gpu.try(&mut out, attempt) {
                 Ok(true) => {
-                    if work_valid(root, out) {
+                    if work_valid(root, out, difficulty).0 {
                         let mut state = work_state.0.lock();
                         if root == state.root {
                             if let Some(callback) = state.callback.take() {

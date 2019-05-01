@@ -17,7 +17,7 @@ pub struct Gpu {
 }
 
 impl Gpu {
-    pub fn new(platform_idx: usize, device_idx: usize, threads: usize) -> Result<Gpu> {
+    pub fn new(platform_idx: usize, device_idx: usize, threads: usize, local_work_size: Option<usize>) -> Result<Gpu> {
         let mut prog_bldr = ProgramBuilder::new();
         prog_bldr.src(include_str!("work.cl"));
         let platforms = Platform::list();
@@ -61,13 +61,21 @@ impl Gpu {
             .len(32)
             .build()?;
 
-        let kernel = pro_que
-            .kernel_builder("raiblocks_work")
-            .global_work_size(threads)
-            .arg(&attempt)
-            .arg(&result)
-            .arg(&root)
-            .build()?;
+        let difficulty = 0u64;
+
+        let kernel = {
+            let mut kernel_builder = pro_que.kernel_builder("nano_work");
+            kernel_builder
+                .global_work_size(threads)
+                .arg(&attempt)
+                .arg(&result)
+                .arg(&root)
+                .arg_named("difficulty", &difficulty);
+            if let Some(local_work_size) = local_work_size {
+                kernel_builder.local_work_size(local_work_size);
+            }
+            kernel_builder.build()?
+        };
 
         let mut gpu = Gpu {
             kernel,
@@ -84,9 +92,10 @@ impl Gpu {
         Ok(())
     }
 
-    pub fn set_root(&mut self, root: &[u8]) -> Result<()> {
+    pub fn set_task(&mut self, root: &[u8], difficulty: u64) -> Result<()> {
         self.reset_bufs()?;
         self.root.write(root).enq()?;
+        self.kernel.set_arg("difficulty", difficulty)?;
         Ok(())
     }
 
