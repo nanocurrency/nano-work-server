@@ -74,7 +74,8 @@ cd target/release
 
     ```json
     {
-        "valid": "1"
+        "valid": "1",
+        "value": "ffffffd21c3933f4"
     }
 
     ```
