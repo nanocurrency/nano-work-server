@@ -15,6 +15,7 @@ extern crate serde_json;
 mod gpu;
 
 use std::u64;
+use std::num::Wrapping;
 use std::collections::VecDeque;
 use std::process;
 use std::sync::Arc;
@@ -307,6 +308,7 @@ impl RpcService {
                     json!({
                         "valid": if valid { "1" } else { "0" },
                         "value": format!("{:x}", value),
+                        "multiplier": format!("{}", ((-Wrapping(MIN_DIFFICULTY)).0 as f32) / ((-Wrapping(value)).0 as f32)),
                     }),
                 )))
             }
