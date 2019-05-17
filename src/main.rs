@@ -280,6 +280,7 @@ impl RpcService {
                             difficulty)
                             .unwrap_or(());
                         let result_difficulty = work_value(root, work);
+                        let work: Vec<u8> = work.iter().rev().cloned().collect();                        
                         Ok((
                             StatusCode::Ok,
                             json!({
