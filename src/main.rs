@@ -272,13 +272,14 @@ impl RpcService {
         match command {
             RpcCommand::WorkGenerate(root, difficulty) => {
                 Box::new(self.generate_work(root, difficulty).then(move |res| match res {
-                    Ok(work) => {
+                    Ok(mut work) => {
                         let end = PreciseTime::now();
                         let _ = println!("work_generate completed in {}ms for difficulty {:#x}",
                             start.to(end).num_milliseconds(),
                             difficulty);
                         let result_difficulty = work_value(root, work);
-                        let work: Vec<u8> = work.iter().rev().cloned().collect();                        
+                        // Reverse before encoding
+                        work.reverse();
                         Ok((
                             StatusCode::Ok,
                             json!({
