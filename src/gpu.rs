@@ -39,7 +39,7 @@ impl Gpu {
             .build()?;
 
         let device = pro_que.device();
-        eprintln!(
+        println!(
             "Initializing GPU: {} {}",
             device.vendor().unwrap_or_else(|_| "[unknown]".into()),
             device.name().unwrap_or_else(|_| "[unknown]".into())
