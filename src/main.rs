@@ -63,6 +63,10 @@ fn work_valid(root: [u8; 32], work: [u8; 8], difficulty: u64) -> (bool, u64) {
     (result_difficulty >= difficulty, result_difficulty)
 }
 
+fn work_multiplier(difficulty: u64) -> f64 {
+    ((-Wrapping(MIN_DIFFICULTY)).0 as f64) / ((-Wrapping(difficulty)).0 as f64)
+}
+
 enum WorkError {
     Canceled,
     Errored,
@@ -279,7 +283,7 @@ impl RpcService {
                             json!({
                                 "work": hex::encode(&work),
                                 "difficulty": format!("{:x}", result_difficulty),
-                                "multiplier": format!("{}", ((-Wrapping(MIN_DIFFICULTY)).0 as f64) / ((-Wrapping(result_difficulty)).0 as f64)),
+                                "multiplier": format!("{}", work_multiplier(result_difficulty)),
                             }),
                         ))
                     }
@@ -310,7 +314,7 @@ impl RpcService {
                     json!({
                         "valid": if valid { "1" } else { "0" },
                         "difficulty": format!("{:x}", result_difficulty),
-                        "multiplier": format!("{}", ((-Wrapping(MIN_DIFFICULTY)).0 as f64) / ((-Wrapping(result_difficulty)).0 as f64)),
+                        "multiplier": format!("{}", work_multiplier(result_difficulty)),
                     }),
                 )))
             }
