@@ -59,8 +59,8 @@ fn work_value(root: [u8; 32], work: [u8; 8]) -> u64 {
 
 #[inline]
 fn work_valid(root: [u8; 32], work: [u8; 8], difficulty: u64) -> (bool, u64) {
-    let value = work_value(root, work);
-    (value >= difficulty, value)
+    let result_difficulty = work_value(root, work);
+    (result_difficulty >= difficulty, result_difficulty)
 }
 
 enum WorkError {
@@ -273,11 +273,14 @@ impl RpcService {
                         println!("work_generate completed in {}ms for difficulty {:#x}",
                             start.to(end).num_milliseconds(),
                             difficulty);
-                        let work: Vec<u8> = work.iter().rev().cloned().collect();
+                        let result_difficulty = work_value(root, work);
+                        let work: Vec<u8> = work.iter().rev().cloned().collect();                        
                         Ok((
                             StatusCode::Ok,
                             json!({
                                 "work": hex::encode(&work),
+                                "difficulty": format!("{:x}", result_difficulty),
+                                "multiplier": format!("{}", ((-Wrapping(MIN_DIFFICULTY)).0 as f64) / ((-Wrapping(result_difficulty)).0 as f64)),
                             }),
                         ))
                     }
@@ -302,13 +305,13 @@ impl RpcService {
             }
             RpcCommand::WorkValidate(root, work, difficulty) => {
                 println!("Received work_validate");
-                let (valid, value) = work_valid(root, work, difficulty);
+                let (valid, result_difficulty) = work_valid(root, work, difficulty);
                 Box::new(future::ok((
                     StatusCode::Ok,
                     json!({
                         "valid": if valid { "1" } else { "0" },
-                        "value": format!("{:x}", value),
-                        "multiplier": format!("{}", ((-Wrapping(MIN_DIFFICULTY)).0 as f32) / ((-Wrapping(value)).0 as f32)),
+                        "difficulty": format!("{:x}", result_difficulty),
+                        "multiplier": format!("{}", ((-Wrapping(MIN_DIFFICULTY)).0 as f64) / ((-Wrapping(result_difficulty)).0 as f64)),
                     }),
                 )))
             }
