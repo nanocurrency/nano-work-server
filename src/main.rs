@@ -274,7 +274,6 @@ impl RpcService {
                             start.to(end).num_milliseconds(),
                             difficulty);
                         let result_difficulty = work_value(root, work);
-                        let work: Vec<u8> = work.iter().rev().cloned().collect();                        
                         Ok((
                             StatusCode::Ok,
                             json!({
