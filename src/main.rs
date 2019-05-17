@@ -14,7 +14,6 @@ extern crate serde_json;
 
 mod gpu;
 
-use std::io::{self, Write};
 use std::u64;
 use std::num::Wrapping;
 use std::collections::VecDeque;
@@ -275,10 +274,9 @@ impl RpcService {
                 Box::new(self.generate_work(root, difficulty).then(move |res| match res {
                     Ok(work) => {
                         let end = PreciseTime::now();
-                        writeln!(io::stdout(), "work_generate completed in {}ms for difficulty {:#x}",
+                        let _ = println!("work_generate completed in {}ms for difficulty {:#x}",
                             start.to(end).num_milliseconds(),
-                            difficulty)
-                            .unwrap_or(());
+                            difficulty);
                         let result_difficulty = work_value(root, work);
                         let work: Vec<u8> = work.iter().rev().cloned().collect();                        
                         Ok((
@@ -305,12 +303,12 @@ impl RpcService {
                 }))
             }
             RpcCommand::WorkCancel(root) => {
-                writeln!(io::stdout(), "Received work_cancel").unwrap_or(());
+                let _ = println!("Received work_cancel");
                 self.cancel_work(root);
                 Box::new(Box::new(future::ok((StatusCode::Ok, json!({})))))
             }
             RpcCommand::WorkValidate(root, work, difficulty) => {
-                writeln!(io::stdout(), "Received work_validate").unwrap_or(());
+                let _ = println!("Received work_validate");
                 let (valid, result_difficulty) = work_valid(root, work, difficulty);
                 Box::new(future::ok((
                     StatusCode::Ok,
