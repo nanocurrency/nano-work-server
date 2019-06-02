@@ -32,12 +32,20 @@ curl https://sh.rustup.rs -sSf | sh
 
 ### Build and run
 
+Linux:
+
 ```
 git clone https://github.com/nanocurrency/nano-work-server.git
 cd nano-work-server
 cargo build --release
 cd target/release
 ./nano-work-server --help
+```
+
+Windows:
+
+```
+cargo rustc --release -- -l OpenCL -L /PATH/TO/OpenCL.lib
 ```
 
 ## Using
