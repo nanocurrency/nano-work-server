@@ -104,6 +104,7 @@ enum RpcCommand {
 }
 
 enum HexJsonError {
+    Empty,
     InvalidHex,
     TooLong,
     TooShort
@@ -142,12 +143,15 @@ impl RpcService {
         }
     }
 
-    fn parse_hex_json(value: &Value, out: &mut [u8]) -> Result<(), HexJsonError> {
+    fn parse_hex_json(value: &Value, out: &mut [u8], allow_short: bool) -> Result<(), HexJsonError> {
         let bytes = value
             .as_str()
             .and_then(|s| hex::decode(s).ok())
             .ok_or(HexJsonError::InvalidHex)?;
-        if bytes.len() < out.len() {
+        if bytes.len() == 0 {
+            return Err(HexJsonError::Empty)
+        }
+        else if !allow_short && bytes.len() < out.len() {
             return Err(HexJsonError::TooShort)
         }
         else if bytes.len() > out.len() {
@@ -165,7 +169,11 @@ impl RpcService {
             "hint": "Hash field missing",
         }))?;
         let mut out = [0u8; 32];
-        Self::parse_hex_json(&root, &mut out).map_err(|err| match err {
+        Self::parse_hex_json(&root, &mut out, false).map_err(|err| match err {
+            HexJsonError::Empty => json!({
+                "error": "Bad block hash",
+                "hint": "Hash is empty. Expecting a hex string",
+            }),
             HexJsonError::InvalidHex => json!({
                 "error": "Bad block hash",
                 "hint": "Expecting a hex string",
@@ -188,15 +196,16 @@ impl RpcService {
             "hint": "Work field missing",
         }))?;
         let mut out = [0u8; 8];
-        Self::parse_hex_json(&root, &mut out).map_err(|err| match err {
+        Self::parse_hex_json(&root, &mut out, true).map_err(|err| match err {
+            HexJsonError::Empty => json!({
+                "error": "Failed to deserialize JSON",
+                "hint": "Work is empty. Expecting a hex string",
+            }),
             HexJsonError::InvalidHex => json!({
                 "error": "Failed to deserialize JSON",
                 "hint": "Expecting a hex string for work",
             }),
-            HexJsonError::TooShort => json!({
-                "error": "Bad block hash",
-                "hint": "Work is too short (should be 8 bytes)",
-            }),
+            HexJsonError::TooShort => panic!("Unexpected error HexJsonError::TooShort"),
             HexJsonError::TooLong => json!({
                 "error": "Failed to deserialize JSON",
                 "hint": "Work is too long (should be 8 bytes)",
