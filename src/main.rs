@@ -106,6 +106,7 @@ enum RpcCommand {
 enum HexJsonError {
     InvalidHex,
     TooLong,
+    TooShort
 }
 
 impl RpcService {
@@ -146,7 +147,10 @@ impl RpcService {
             .as_str()
             .and_then(|s| hex::decode(s).ok())
             .ok_or(HexJsonError::InvalidHex)?;
-        if bytes.len() > out.len() {
+        if bytes.len() < out.len() {
+            return Err(HexJsonError::TooShort)
+        }
+        else if bytes.len() > out.len() {
             return Err(HexJsonError::TooLong);
         }
         for (byte, out) in bytes.iter().rev().zip(out.iter_mut().rev()) {
@@ -166,6 +170,10 @@ impl RpcService {
                 "error": "Bad block hash",
                 "hint": "Expecting a hex string",
             }),
+            HexJsonError::TooShort => json!({
+                "error": "Bad block hash",
+                "hint": "Hash is too short (should be 32 bytes)",
+            }),
             HexJsonError::TooLong => json!({
                 "error": "Bad block hash",
                 "hint": "Hash is too long (should be 32 bytes)",
@@ -184,6 +192,10 @@ impl RpcService {
             HexJsonError::InvalidHex => json!({
                 "error": "Failed to deserialize JSON",
                 "hint": "Expecting a hex string for work",
+            }),
+            HexJsonError::TooShort => json!({
+                "error": "Bad block hash",
+                "hint": "Work is too short (should be 8 bytes)",
             }),
             HexJsonError::TooLong => json!({
                 "error": "Failed to deserialize JSON",
