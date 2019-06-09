@@ -593,5 +593,6 @@ fn main() {
             })
         })
         .expect("Failed to bind server");
+    println!("Ready to receive requests.");
     server.run().expect("Error running server");
 }
