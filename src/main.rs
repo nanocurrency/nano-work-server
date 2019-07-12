@@ -15,6 +15,7 @@ extern crate serde_json;
 mod gpu;
 
 use std::u64;
+use std::num::Wrapping;
 use std::collections::VecDeque;
 use std::process;
 use std::sync::Arc;
@@ -58,8 +59,12 @@ fn work_value(root: [u8; 32], work: [u8; 8]) -> u64 {
 
 #[inline]
 fn work_valid(root: [u8; 32], work: [u8; 8], difficulty: u64) -> (bool, u64) {
-    let value = work_value(root, work);
-    (value >= difficulty, value)
+    let result_difficulty = work_value(root, work);
+    (result_difficulty >= difficulty, result_difficulty)
+}
+
+fn work_multiplier(difficulty: u64) -> f64 {
+    ((-Wrapping(MIN_DIFFICULTY)).0 as f64) / ((-Wrapping(difficulty)).0 as f64)
 }
 
 enum WorkError {
@@ -267,16 +272,20 @@ impl RpcService {
         match command {
             RpcCommand::WorkGenerate(root, difficulty) => {
                 Box::new(self.generate_work(root, difficulty).then(move |res| match res {
-                    Ok(work) => {
+                    Ok(mut work) => {
                         let end = PreciseTime::now();
-                        println!("work_generate completed in {}ms for difficulty {:#x}",
+                        let _ = println!("work_generate completed in {}ms for difficulty {:#x}",
                             start.to(end).num_milliseconds(),
                             difficulty);
-                        let work: Vec<u8> = work.iter().rev().cloned().collect();
+                        let result_difficulty = work_value(root, work);
+                        // Reverse before encoding
+                        work.reverse();
                         Ok((
                             StatusCode::Ok,
                             json!({
                                 "work": hex::encode(&work),
+                                "difficulty": format!("{:x}", result_difficulty),
+                                "multiplier": format!("{}", work_multiplier(result_difficulty)),
                             }),
                         ))
                     }
@@ -295,18 +304,19 @@ impl RpcService {
                 }))
             }
             RpcCommand::WorkCancel(root) => {
-                println!("Received work_cancel");
+                let _ = println!("Received work_cancel");
                 self.cancel_work(root);
                 Box::new(Box::new(future::ok((StatusCode::Ok, json!({})))))
             }
             RpcCommand::WorkValidate(root, work, difficulty) => {
-                println!("Received work_validate");
-                let (valid, value) = work_valid(root, work, difficulty);
+                let _ = println!("Received work_validate");
+                let (valid, result_difficulty) = work_valid(root, work, difficulty);
                 Box::new(future::ok((
                     StatusCode::Ok,
                     json!({
                         "valid": if valid { "1" } else { "0" },
-                        "value": format!("{:x}", value),
+                        "difficulty": format!("{:x}", result_difficulty),
+                        "multiplier": format!("{}", work_multiplier(result_difficulty)),
                     }),
                 )))
             }
@@ -583,5 +593,6 @@ fn main() {
             })
         })
         .expect("Failed to bind server");
+    println!("Ready to receive requests.");
     server.run().expect("Error running server");
 }

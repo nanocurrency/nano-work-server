@@ -55,7 +55,9 @@ cd target/release
 
     ```json
     {
-        "work": "2bf29ef00786a6bc"
+        "work": "2bf29ef00786a6bc",
+        "difficulty": "ffffffd21c3933f4",
+        "multiplier": "1.3946469"        
     }
     ```
 
@@ -75,7 +77,8 @@ cd target/release
     ```json
     {
         "valid": "1",
-        "value": "ffffffd21c3933f4"
+        "difficulty": "ffffffd21c3933f4",
+        "multiplier": "1.3946469"
     }
 
     ```
