@@ -3,7 +3,7 @@
 This project is a dedicated work server for [the Nano cryptocurrency](https://nano.org/).
 
 It supports the `work_generate`, `work_cancel`, and `work_validate` commands from the Nano RPC.
-For details on these commands, see [the Nano RPC documentation](https://github.com/nanocurrency/raiblocks/wiki/RPC-protocol).
+For details on these commands, see [the Nano RPC documentation](https://docs.nano.org/commands/rpc-protocol/).
 
 To see available command line options, run `nano-work-server --help`.
 
@@ -48,7 +48,8 @@ cd target/release
     {
         "action": "work_generate",
         "hash": "718CC2121C3E641059BC1C2CFC45666C99E8AE922F7A807B7D07B62C995D79E2",
-        "difficulty": "ffffffc000000000"
+        "difficulty": "ffffffc000000000",
+        "multiplier": "1.0" // overrides difficulty
     }
     ```
     Response:
@@ -69,7 +70,8 @@ cd target/release
         "action": "work_validate",
         "hash": "718CC2121C3E641059BC1C2CFC45666C99E8AE922F7A807B7D07B62C995D79E2",
         "work": "2bf29ef00786a6bc",
-        "difficulty": "ffffffc000000000"
+        "difficulty": "ffffffc000000000",
+        "multiplier": "1.0" // overrides difficulty
     }
     ```
     Response:
