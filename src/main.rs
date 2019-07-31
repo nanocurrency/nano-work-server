@@ -45,8 +45,8 @@ use time::PreciseTime;
 
 use gpu::Gpu;
 
-// Nano's minimum work difficulty, set as default when difficulty not given
-const MIN_DIFFICULTY: u64 = 0xffffffc000000000;
+// Live network difficulty, set as default when difficulty not given
+const LIVE_DIFFICULTY: u64 = 0xffffffc000000000;
 
 fn work_value(root: [u8; 32], work: [u8; 8]) -> u64 {
     let mut buf = [0u8; 8];
@@ -63,8 +63,12 @@ fn work_valid(root: [u8; 32], work: [u8; 8], difficulty: u64) -> (bool, u64) {
     (result_difficulty >= difficulty, result_difficulty)
 }
 
-fn work_multiplier(difficulty: u64) -> f64 {
-    ((-Wrapping(MIN_DIFFICULTY)).0 as f64) / ((-Wrapping(difficulty)).0 as f64)
+fn to_multiplier(difficulty: u64) -> f64 {
+    ((-Wrapping(LIVE_DIFFICULTY)).0 as f64) / ((-Wrapping(difficulty)).0 as f64)
+}
+
+fn from_multiplier(multiplier: f64) -> u64 {
+    -Wrapping(((-Wrapping(LIVE_DIFFICULTY)).0 as f64) / (multiplier)).0 as u64
 }
 
 enum WorkError {
@@ -103,9 +107,9 @@ struct RpcService {
 }
 
 enum RpcCommand {
-    WorkGenerate([u8; 32], u64),
+    WorkGenerate([u8; 32], u64, Option<f64>),
     WorkCancel([u8; 32]),
-    WorkValidate([u8; 32], [u8; 8], u64),
+    WorkValidate([u8; 32], [u8; 8], u64, Option<f64>),
 }
 
 enum HexJsonError {
@@ -223,7 +227,7 @@ impl RpcService {
     fn parse_difficulty_json(json: &Value) -> Result<u64, Value> {
         match json.get("difficulty") {
 
-            None => Ok(MIN_DIFFICULTY),
+            None => Ok(LIVE_DIFFICULTY),
 
             Some(json) => {
                 let difficulty_str = json.as_str().ok_or(json!({
@@ -241,6 +245,25 @@ impl RpcService {
         }
     }
 
+    fn parse_multiplier_json(json: &Value) -> Result<Option<f64>, Value> {
+        match json.get("multiplier") {
+
+            None => Ok(None),
+
+            Some(json) => {
+                let multiplier = json
+                    .as_str()
+                    .and_then(|s| s.parse().ok())
+                    .filter(|&x| x > 0.)
+                    .ok_or(json!({
+                        "error": "Failed to deserialize JSON",
+                        "hint": "Expecting a positive number for multiplier"
+                    }))?;
+                Ok(Some(multiplier))
+            },
+        }
+    }
+
     fn parse_json(json: Value) -> Result<RpcCommand, Value> {
         match json.get("action") {
             None => {
@@ -252,6 +275,7 @@ impl RpcService {
             Some(action) if action == "work_generate" => Ok(RpcCommand::WorkGenerate(
                 Self::parse_hash_json(&json)?,
                 Self::parse_difficulty_json(&json)?,
+                Self::parse_multiplier_json(&json)?,
             )),
             Some(action) if action == "work_cancel" => {
                 Ok(RpcCommand::WorkCancel(Self::parse_hash_json(&json)?))
@@ -260,6 +284,7 @@ impl RpcService {
                 Self::parse_hash_json(&json)?,
                 Self::parse_work_json(&json)?,
                 Self::parse_difficulty_json(&json)?,
+                Self::parse_multiplier_json(&json)?,
             )),
             Some(_) => {
                 return Err(json!({
@@ -291,14 +316,21 @@ impl RpcService {
         };
         let start = PreciseTime::now();
         match command {
-            RpcCommand::WorkGenerate(root, difficulty) => {
+            RpcCommand::WorkGenerate(root, difficulty, multiplier) => {
+                let difficulty = match multiplier {
+                    None => difficulty,
+                    Some(multiplier) => from_multiplier(multiplier)
+                };
                 Box::new(self.generate_work(root, difficulty).then(move |res| match res {
                     Ok(mut work) => {
                         let end = PreciseTime::now();
-                        let _ = println!("work_generate completed in {}ms for difficulty {:#x}",
-                            start.to(end).num_milliseconds(),
-                            difficulty);
                         let result_difficulty = work_value(root, work);
+                        let result_multiplier = to_multiplier(result_difficulty);
+                        let _ = println!("Generated for {} in {}ms for multiplier {}",
+                            hex::encode_upper(&root),
+                            start.to(end).num_milliseconds(),
+                            result_multiplier
+                        );
                         // Reverse before encoding
                         work.reverse();
                         Ok((
@@ -306,7 +338,7 @@ impl RpcService {
                             json!({
                                 "work": hex::encode(&work),
                                 "difficulty": format!("{:x}", result_difficulty),
-                                "multiplier": format!("{}", work_multiplier(result_difficulty)),
+                                "multiplier": format!("{}", result_multiplier),
                             }),
                         ))
                     }
@@ -325,19 +357,23 @@ impl RpcService {
                 }))
             }
             RpcCommand::WorkCancel(root) => {
-                let _ = println!("Received work_cancel");
+                let _ = println!("Cancel {}", hex::encode_upper(&root));
                 self.cancel_work(root);
                 Box::new(Box::new(future::ok((StatusCode::Ok, json!({})))))
             }
-            RpcCommand::WorkValidate(root, work, difficulty) => {
-                let _ = println!("Received work_validate");
+            RpcCommand::WorkValidate(root, work, difficulty, multiplier) => {
+                let _ = println!("Validate {}", hex::encode_upper(&root));
+                let difficulty = match multiplier {
+                    None => difficulty,
+                    Some(multiplier) => from_multiplier(multiplier)
+                };
                 let (valid, result_difficulty) = work_valid(root, work, difficulty);
                 Box::new(future::ok((
                     StatusCode::Ok,
                     json!({
                         "valid": if valid { "1" } else { "0" },
                         "difficulty": format!("{:x}", result_difficulty),
-                        "multiplier": format!("{}", work_multiplier(result_difficulty)),
+                        "multiplier": format!("{}", to_multiplier(result_difficulty)),
                     }),
                 )))
             }
