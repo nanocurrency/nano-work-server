@@ -614,6 +614,6 @@ fn main() {
             })
         })
         .expect("Failed to bind server");
-    println!("Ready to receive requests.");
+    println!("Ready to receive requests on {}", listen_addr);
     server.run().expect("Error running server");
 }
