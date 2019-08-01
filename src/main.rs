@@ -145,7 +145,7 @@ impl RpcService {
     }
 
     fn to_multiplier(&self, difficulty: u64) -> f64 {
-        (self.base_difficulty.wrapping_neg() as f64) / ((difficulty.wrapping_neg())) as f64
+        (self.base_difficulty.wrapping_neg() as f64) / (difficulty.wrapping_neg() as f64)
     }
 
     fn from_multiplier(&self, multiplier: f64) -> u64 {
