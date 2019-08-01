@@ -15,7 +15,6 @@ extern crate serde_json;
 mod gpu;
 
 use std::u64;
-use std::num::Wrapping;
 use std::collections::VecDeque;
 use std::process;
 use std::sync::Arc;
@@ -61,14 +60,6 @@ fn work_value(root: [u8; 32], work: [u8; 8]) -> u64 {
 fn work_valid(root: [u8; 32], work: [u8; 8], difficulty: u64) -> (bool, u64) {
     let result_difficulty = work_value(root, work);
     (result_difficulty >= difficulty, result_difficulty)
-}
-
-fn to_multiplier(difficulty: u64, base_difficulty: u64) -> f64 {
-    ((-Wrapping(base_difficulty)).0 as f64) / ((-Wrapping(difficulty)).0 as f64)
-}
-
-fn from_multiplier(multiplier: f64, base_difficulty: u64) -> u64 {
-    -Wrapping(((-Wrapping(base_difficulty)).0 as f64) / (multiplier)).0 as u64
 }
 
 enum WorkError {
@@ -151,6 +142,14 @@ impl RpcService {
                 state.set_task(&self.work_state.1);
             }
         }
+    }
+
+    fn to_multiplier(&self, difficulty: u64) -> f64 {
+        (self.base_difficulty.wrapping_neg() as f64) / ((difficulty.wrapping_neg())) as f64
+    }
+
+    fn from_multiplier(&self, multiplier: f64) -> u64 {
+        (((self.base_difficulty.wrapping_neg() as f64) / multiplier) as u64).wrapping_neg()
     }
 
     fn parse_hex_json(value: &Value, out: &mut [u8], allow_short: bool) -> Result<(), HexJsonError> {
@@ -320,13 +319,13 @@ impl RpcService {
             RpcCommand::WorkGenerate(root, difficulty, multiplier) => {
                 let difficulty = match multiplier {
                     None => difficulty,
-                    Some(multiplier) => from_multiplier(multiplier, self.base_difficulty)
+                    Some(multiplier) => self.from_multiplier(multiplier)
                 };
                 Box::new(self.generate_work(root, difficulty).then(move |res| match res {
                     Ok(mut work) => {
                         let end = PreciseTime::now();
                         let result_difficulty = work_value(root, work);
-                        let result_multiplier = to_multiplier(result_difficulty, self.base_difficulty);
+                        let result_multiplier = self.to_multiplier(result_difficulty);
                         let _ = println!("Generated for {} in {}ms for difficulty {:x}",
                             hex::encode_upper(&root),
                             start.to(end).num_milliseconds(),
@@ -366,7 +365,7 @@ impl RpcService {
                 let _ = println!("Validate {}", hex::encode_upper(&root));
                 let difficulty = match multiplier {
                     None => difficulty,
-                    Some(multiplier) => from_multiplier(multiplier, self.base_difficulty)
+                    Some(multiplier) => self.from_multiplier(multiplier)
                 };
                 let (valid, result_difficulty) = work_valid(root, work, difficulty);
                 Box::new(future::ok((
@@ -374,7 +373,7 @@ impl RpcService {
                     json!({
                         "valid": if valid { "1" } else { "0" },
                         "difficulty": format!("{:x}", result_difficulty),
-                        "multiplier": format!("{}", to_multiplier(result_difficulty, self.base_difficulty)),
+                        "multiplier": format!("{}", self.to_multiplier(result_difficulty)),
                     }),
                 )))
             }
@@ -458,10 +457,7 @@ fn main() {
         )
         .get_matches();
     let beta = args.is_present("beta");
-    let base_difficulty = match beta{
-        false => LIVE_DIFFICULTY,
-        true => BETA_DIFFICULTY,
-    };
+    let base_difficulty = if beta {BETA_DIFFICULTY} else {LIVE_DIFFICULTY};
     let listen_addr = args.value_of("listen_address")
         .unwrap()
         .parse()
@@ -660,10 +656,9 @@ fn main() {
             })
         })
         .expect("Failed to bind server");
-    println!("Configured for the {} network with threshold {:x}", match beta {
-        false => "live",
-        true => "beta"
-    }, base_difficulty);
+    println!("Configured for the {} network with threshold {:x}",
+        if beta {"beta"} else {"live"},
+        base_difficulty);
     println!("Ready to receive requests on {}", listen_addr);
     server.run().expect("Error running server");
 }
