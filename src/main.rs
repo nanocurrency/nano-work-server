@@ -15,7 +15,6 @@ extern crate serde_json;
 mod gpu;
 
 use std::u64;
-use std::num::Wrapping;
 use std::collections::VecDeque;
 use std::process;
 use std::sync::Arc;
@@ -45,8 +44,8 @@ use time::PreciseTime;
 
 use gpu::Gpu;
 
-// Live network difficulty, set as default when difficulty not given
 const LIVE_DIFFICULTY: u64 = 0xffffffc000000000;
+const BETA_DIFFICULTY: u64 = 0xfffffc0000000000;
 
 fn work_value(root: [u8; 32], work: [u8; 8]) -> u64 {
     let mut buf = [0u8; 8];
@@ -61,14 +60,6 @@ fn work_value(root: [u8; 32], work: [u8; 8]) -> u64 {
 fn work_valid(root: [u8; 32], work: [u8; 8], difficulty: u64) -> (bool, u64) {
     let result_difficulty = work_value(root, work);
     (result_difficulty >= difficulty, result_difficulty)
-}
-
-fn to_multiplier(difficulty: u64) -> f64 {
-    ((-Wrapping(LIVE_DIFFICULTY)).0 as f64) / ((-Wrapping(difficulty)).0 as f64)
-}
-
-fn from_multiplier(multiplier: f64) -> u64 {
-    -Wrapping(((-Wrapping(LIVE_DIFFICULTY)).0 as f64) / (multiplier)).0 as u64
 }
 
 enum WorkError {
@@ -104,6 +95,7 @@ impl WorkState {
 #[derive(Clone)]
 struct RpcService {
     work_state: Arc<(Mutex<WorkState>, Condvar)>,
+    base_difficulty: u64,
 }
 
 enum RpcCommand {
@@ -150,6 +142,14 @@ impl RpcService {
                 state.set_task(&self.work_state.1);
             }
         }
+    }
+
+    fn to_multiplier(&self, difficulty: u64) -> f64 {
+        (self.base_difficulty.wrapping_neg() as f64) / (difficulty.wrapping_neg() as f64)
+    }
+
+    fn from_multiplier(&self, multiplier: f64) -> u64 {
+        (((self.base_difficulty.wrapping_neg() as f64) / multiplier) as u64).wrapping_neg()
     }
 
     fn parse_hex_json(value: &Value, out: &mut [u8], allow_short: bool) -> Result<(), HexJsonError> {
@@ -224,10 +224,10 @@ impl RpcService {
         Ok(out)
     }
 
-    fn parse_difficulty_json(json: &Value) -> Result<u64, Value> {
+    fn parse_difficulty_json(json: &Value) -> Result<Option<u64>, Value> {
         match json.get("difficulty") {
 
-            None => Ok(LIVE_DIFFICULTY),
+            None => Ok(None),
 
             Some(json) => {
                 let difficulty_str = json.as_str().ok_or(json!({
@@ -240,7 +240,7 @@ impl RpcService {
                     "hint": "Threshold not a valid unsigned long (u64). Example: 'ffffffc000000000'",
                 }))?;
 
-                Ok(difficulty)
+                Ok(Some(difficulty))
             },
         }
     }
@@ -264,7 +264,7 @@ impl RpcService {
         }
     }
 
-    fn parse_json(json: Value) -> Result<RpcCommand, Value> {
+    fn parse_json(&self, json: Value) -> Result<RpcCommand, Value> {
         match json.get("action") {
             None => {
                 return Err(json!({
@@ -274,7 +274,7 @@ impl RpcService {
             }
             Some(action) if action == "work_generate" => Ok(RpcCommand::WorkGenerate(
                 Self::parse_hash_json(&json)?,
-                Self::parse_difficulty_json(&json)?,
+                Self::parse_difficulty_json(&json)?.unwrap_or(self.base_difficulty),
                 Self::parse_multiplier_json(&json)?,
             )),
             Some(action) if action == "work_cancel" => {
@@ -283,7 +283,7 @@ impl RpcService {
             Some(action) if action == "work_validate" => Ok(RpcCommand::WorkValidate(
                 Self::parse_hash_json(&json)?,
                 Self::parse_work_json(&json)?,
-                Self::parse_difficulty_json(&json)?,
+                Self::parse_difficulty_json(&json)?.unwrap_or(self.base_difficulty),
                 Self::parse_multiplier_json(&json)?,
             )),
             Some(_) => {
@@ -310,7 +310,7 @@ impl RpcService {
                 )));
             }
         };
-        let command = match Self::parse_json(json) {
+        let command = match self.parse_json(json) {
             Ok(r) => r,
             Err(err) => return Box::new(future::ok((StatusCode::BadRequest, err))),
         };
@@ -319,17 +319,17 @@ impl RpcService {
             RpcCommand::WorkGenerate(root, difficulty, multiplier) => {
                 let difficulty = match multiplier {
                     None => difficulty,
-                    Some(multiplier) => from_multiplier(multiplier)
+                    Some(multiplier) => self.from_multiplier(multiplier)
                 };
                 Box::new(self.generate_work(root, difficulty).then(move |res| match res {
                     Ok(mut work) => {
                         let end = PreciseTime::now();
                         let result_difficulty = work_value(root, work);
-                        let result_multiplier = to_multiplier(result_difficulty);
-                        let _ = println!("Generated for {} in {}ms for multiplier {}",
+                        let result_multiplier = self.to_multiplier(result_difficulty);
+                        let _ = println!("Generated for {} in {}ms for difficulty {:x}",
                             hex::encode_upper(&root),
                             start.to(end).num_milliseconds(),
-                            result_multiplier
+                            difficulty
                         );
                         // Reverse before encoding
                         work.reverse();
@@ -365,7 +365,7 @@ impl RpcService {
                 let _ = println!("Validate {}", hex::encode_upper(&root));
                 let difficulty = match multiplier {
                     None => difficulty,
-                    Some(multiplier) => from_multiplier(multiplier)
+                    Some(multiplier) => self.from_multiplier(multiplier)
                 };
                 let (valid, result_difficulty) = work_valid(root, work, difficulty);
                 Box::new(future::ok((
@@ -373,7 +373,7 @@ impl RpcService {
                     json!({
                         "valid": if valid { "1" } else { "0" },
                         "difficulty": format!("{:x}", result_difficulty),
-                        "multiplier": format!("{}", to_multiplier(result_difficulty)),
+                        "multiplier": format!("{}", self.to_multiplier(result_difficulty)),
                     }),
                 )))
             }
@@ -442,9 +442,7 @@ fn main() {
                 .long("gpu")
                 .value_name("PLATFORM:DEVICE:THREADS")
                 .multiple(true)
-                .help(
-                    "Specifies which GPU(s) to use. THREADS is optional and defaults to 1048576.",
-                ),
+                .help("Specifies which GPU(s) to use. THREADS is optional and defaults to 1048576."),
         )
         .arg(
             clap::Arg::with_name("gpu_local_work_size")
@@ -452,7 +450,14 @@ fn main() {
                 .value_name("N")
                 .help("The GPU local work size. Increasing it may increase performance. For advanced users only."),
         )
+        .arg(
+            clap::Arg::with_name("beta")
+                .long("beta")
+                .help("Generate work for the beta network. Modifies the base threshold for given multipliers or requests without a custom difficulty"),
+        )
         .get_matches();
+    let beta = args.is_present("beta");
+    let base_difficulty = if beta {BETA_DIFFICULTY} else {LIVE_DIFFICULTY};
     let listen_addr = args.value_of("listen_address")
         .unwrap()
         .parse()
@@ -647,9 +652,13 @@ fn main() {
         .bind(&listen_addr, move || {
             Ok(RpcService {
                 work_state: work_state.clone(),
+                base_difficulty
             })
         })
         .expect("Failed to bind server");
+    println!("Configured for the {} network with threshold {:x}",
+        if beta {"beta"} else {"live"},
+        base_difficulty);
     println!("Ready to receive requests on {}", listen_addr);
     server.run().expect("Error running server");
 }

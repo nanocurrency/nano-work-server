@@ -7,6 +7,7 @@ For details on these commands, see [the Nano RPC documentation](https://docs.nan
 
 To see available command line options, run `nano-work-server --help`.
 
+To use with the beta network (lower work difficulty), give the flag `--beta`. Working with both networks simultaneously is not supported.
 
 ## Installation
 
