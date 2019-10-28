@@ -15,8 +15,8 @@ extern crate serde_json;
 mod gpu;
 
 use std::u64;
-use std::collections::VecDeque;
 use std::process;
+use std::vec::Vec;
 use std::sync::Arc;
 use std::thread;
 use std::sync::atomic::{self, AtomicBool};
@@ -74,14 +74,16 @@ struct WorkState {
     callback: Option<oneshot::Sender<Result<[u8; 8], WorkError>>>,
     task_complete: Arc<AtomicBool>,
     unsuccessful_workers: usize,
-    future_work: VecDeque<([u8; 32], u64, oneshot::Sender<Result<[u8; 8], WorkError>>)>,
+    future_work: Vec<([u8; 32], u64, oneshot::Sender<Result<[u8; 8], WorkError>>)>,
 }
 
 impl WorkState {
     fn set_task(&mut self, cond_var: &Condvar) {
         if self.callback.is_none() {
             self.task_complete.store(true, atomic::Ordering::Relaxed);
-            if let Some((root, difficulty, callback)) = self.future_work.pop_front() {
+            if self.future_work.len() > 0 {
+                let i = rand::thread_rng().gen_range(0, self.future_work.len());
+                let (root, difficulty, callback) = self.future_work.remove(i);
                 self.root = root;
                 self.difficulty = difficulty;
                 self.callback = Some(callback);
@@ -115,7 +117,7 @@ impl RpcService {
     fn generate_work(&self, root: [u8; 32], difficulty: u64) -> Box<Future<Item = [u8; 8], Error = WorkError>> {
         let mut state = self.work_state.0.lock();
         let (callback_send, callback_recv) = oneshot::channel();
-        state.future_work.push_back((root, difficulty, callback_send));
+        state.future_work.push((root, difficulty, callback_send));
         state.set_task(&self.work_state.1);
         Box::new(
             callback_recv
@@ -129,10 +131,9 @@ impl RpcService {
         let mut i = 0;
         while i < state.future_work.len() {
             if state.future_work[i].0 == root {
-                if let Some((_, _, callback)) = state.future_work.remove(i) {
-                    let _ = callback.send(Err(WorkError::Canceled));
-                    continue;
-                }
+                let (_, _, callback) = state.future_work.remove(i);
+                let _ = callback.send(Err(WorkError::Canceled));
+                continue;
             }
             i += 1;
         }
