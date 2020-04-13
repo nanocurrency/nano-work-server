@@ -74,6 +74,7 @@ struct WorkState {
     callback: Option<oneshot::Sender<Result<[u8; 8], WorkError>>>,
     task_complete: Arc<AtomicBool>,
     unsuccessful_workers: usize,
+    random_mode: bool,
     future_work: Vec<([u8; 32], u64, oneshot::Sender<Result<[u8; 8], WorkError>>)>,
 }
 
@@ -82,7 +83,8 @@ impl WorkState {
         if self.callback.is_none() {
             self.task_complete.store(true, atomic::Ordering::Relaxed);
             if self.future_work.len() > 0 {
-                let i = rand::thread_rng().gen_range(0, self.future_work.len());
+                let max_range = if self.random_mode {self.future_work.len()} else {1};
+                let i = rand::thread_rng().gen_range(0, max_range);
                 let (root, difficulty, callback) = self.future_work.remove(i);
                 self.root = root;
                 self.difficulty = difficulty;
@@ -114,7 +116,7 @@ enum HexJsonError {
 }
 
 impl RpcService {
-    fn generate_work(&self, root: [u8; 32], difficulty: u64) -> Box<Future<Item = [u8; 8], Error = WorkError>> {
+    fn generate_work(&self, root: [u8; 32], difficulty: u64) -> Box<dyn Future<Item = [u8; 8], Error = WorkError>> {
         let mut state = self.work_state.0.lock();
         let (callback_send, callback_recv) = oneshot::channel();
         state.future_work.push((root, difficulty, callback_send));
@@ -299,7 +301,7 @@ impl RpcService {
     fn process_req(
         self,
         req: Result<Value, serde_json::Error>,
-    ) -> Box<Future<Item = (StatusCode, Value), Error = hyper::Error>> {
+    ) -> Box<dyn Future<Item = (StatusCode, Value), Error = hyper::Error>> {
         let json = match req {
             Ok(json) => json,
             Err(_) => {
@@ -386,7 +388,7 @@ impl Service for RpcService {
     type Request = Request;
     type Response = Response;
     type Error = hyper::Error;
-    type Future = Box<Future<Item = Self::Response, Error = Self::Error>>;
+    type Future = Box<dyn Future<Item = Self::Response, Error = Self::Error>>;
 
     fn call(&self, req: Request) -> Self::Future {
         let res_fut = if *req.method() == hyper::Method::Post {
@@ -456,9 +458,15 @@ fn main() {
                 .long("beta")
                 .help("Generate work for the beta network. Modifies the base threshold for given multipliers or requests without a custom difficulty"),
         )
+        .arg(
+            clap::Arg::with_name("shuffle")
+                .long("shuffle")
+                .help("Pick a random request from the queue instead of the oldest. Increases efficiency when using multiple work servers")
+        )
         .get_matches();
     let beta = args.is_present("beta");
     let base_difficulty = if beta {BETA_DIFFICULTY} else {LIVE_DIFFICULTY};
+    let random_mode = args.is_present("shuffle");
     let listen_addr = args.value_of("listen_address")
         .unwrap()
         .parse()
@@ -508,6 +516,10 @@ fn main() {
         process::exit(1);
     }
     let work_state = Arc::new((Mutex::new(WorkState::default()), Condvar::new()));
+    {
+        let mut state = work_state.0.lock();
+        state.random_mode = random_mode;
+    }
     let mut worker_handles = Vec::new();
     for _ in 0..cpu_threads {
         let work_state = work_state.clone();
