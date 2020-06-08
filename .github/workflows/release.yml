@@ -1,0 +1,30 @@
+name: Release Artifacts
+
+on:
+  push:
+    tags:
+      - '*'
+
+jobs:
+  artifacts:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install OpenCL
+        run: |
+          sudo add-apt-repository ppa:intel-opencl/intel-opencl
+          sudo apt-get update
+          sudo apt-get install ocl-icd-opencl-dev
+      - uses: actions/checkout@aabbfeb
+      - uses: actions-rs/toolchain@b2417cd
+        with:
+          toolchain: stable
+      - name: Build release
+        run: cargo build --release
+      - name: Upload artifact
+        uses: svenstaro/upload-release-action@14569a2
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: target/release/nano-work-server
+          asset_name: nano-work-server
+          tag: ${{ github.ref }}
+          overwrite: true
