@@ -24,13 +24,21 @@ Fedora:
 sudo dnf install ocl-icd-devel
 ```
 
+Windows:
+- AMD GPU: Executable from https://github.com/GPUOpen-LibrariesAndSDKs/OCL-SDK/releases/ will install the required `opencl.lib` in `C:\Program Files (x86)\OCL_SDK_Light\lib\x86_64`
+- Nvidia GPU: Through the CUDA toolkit from https://developer.nvidia.com/cuda-toolkit
+
 ### Rust
+
+Linux:
 
 ```
 curl https://sh.rustup.rs -sSf | sh
 ```
 
-### Build and run
+Windows: install using `rustup` from https://www.rust-lang.org/tools/install
+
+### Build
 
 ```bash
 git clone https://github.com/nanocurrency/nano-work-server.git
