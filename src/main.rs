@@ -44,8 +44,8 @@ use time::PreciseTime;
 
 use gpu::Gpu;
 
-const LIVE_DIFFICULTY: u64 = 0xffffffc000000000;
-const BETA_DIFFICULTY: u64 = 0xfffff00000000000;
+const LIVE_DIFFICULTY: u64 = 0xfffffff800000000;
+const LIVE_RECEIVE_DIFFICULTY: u64 = 0xfffffe0000000000;
 
 fn work_value(root: [u8; 32], work: [u8; 8]) -> u64 {
     let mut buf = [0u8; 8];
@@ -99,13 +99,12 @@ impl WorkState {
 #[derive(Clone)]
 struct RpcService {
     work_state: Arc<(Mutex<WorkState>, Condvar)>,
-    base_difficulty: u64,
 }
 
 enum RpcCommand {
     WorkGenerate([u8; 32], u64, Option<f64>),
     WorkCancel([u8; 32]),
-    WorkValidate([u8; 32], [u8; 8], u64, Option<f64>),
+    WorkValidate([u8; 32], [u8; 8], u64, Option<f64>, bool),
 }
 
 enum HexJsonError {
@@ -148,11 +147,11 @@ impl RpcService {
     }
 
     fn to_multiplier(&self, difficulty: u64) -> f64 {
-        (self.base_difficulty.wrapping_neg() as f64) / (difficulty.wrapping_neg() as f64)
+        (LIVE_DIFFICULTY.wrapping_neg() as f64) / (difficulty.wrapping_neg() as f64)
     }
 
     fn from_multiplier(&self, multiplier: f64) -> u64 {
-        (((self.base_difficulty.wrapping_neg() as f64) / multiplier) as u64).wrapping_neg()
+        (((LIVE_DIFFICULTY.wrapping_neg() as f64) / multiplier) as u64).wrapping_neg()
     }
 
     fn parse_hex_json(value: &Value, out: &mut [u8], allow_short: bool) -> Result<(), HexJsonError> {
@@ -277,7 +276,7 @@ impl RpcService {
             }
             Some(action) if action == "work_generate" => Ok(RpcCommand::WorkGenerate(
                 Self::parse_hash_json(&json)?,
-                Self::parse_difficulty_json(&json)?.unwrap_or(self.base_difficulty),
+                Self::parse_difficulty_json(&json)?.unwrap_or(LIVE_DIFFICULTY),
                 Self::parse_multiplier_json(&json)?,
             )),
             Some(action) if action == "work_cancel" => {
@@ -286,8 +285,9 @@ impl RpcService {
             Some(action) if action == "work_validate" => Ok(RpcCommand::WorkValidate(
                 Self::parse_hash_json(&json)?,
                 Self::parse_work_json(&json)?,
-                Self::parse_difficulty_json(&json)?.unwrap_or(self.base_difficulty),
+                Self::parse_difficulty_json(&json)?.unwrap_or(LIVE_DIFFICULTY),
                 Self::parse_multiplier_json(&json)?,
+                json.get("difficulty").is_some() || json.get("multiplier").is_some(),
             )),
             Some(_) => {
                 return Err(json!({
@@ -364,20 +364,33 @@ impl RpcService {
                 self.cancel_work(root);
                 Box::new(Box::new(future::ok((StatusCode::Ok, json!({})))))
             }
-            RpcCommand::WorkValidate(root, work, difficulty, multiplier) => {
+            RpcCommand::WorkValidate(root, work, difficulty, multiplier, difficulty_or_multiplier_present) => {
                 let _ = println!("Validate {}", hex::encode_upper(&root));
                 let difficulty = match multiplier {
                     None => difficulty,
                     Some(multiplier) => self.from_multiplier(multiplier)
                 };
                 let (valid, result_difficulty) = work_valid(root, work, difficulty);
+                let (valid_all, _) = work_valid(root, work, LIVE_DIFFICULTY);
+                let (valid_receive, _) = work_valid(root, work, LIVE_RECEIVE_DIFFICULTY);
                 Box::new(future::ok((
                     StatusCode::Ok,
-                    json!({
-                        "valid": if valid { "1" } else { "0" },
-                        "difficulty": format!("{:x}", result_difficulty),
-                        "multiplier": format!("{}", self.to_multiplier(result_difficulty)),
-                    }),
+                    match difficulty_or_multiplier_present {
+                        true => json!({
+                            "valid": if valid { "1" } else { "0" },
+                            "valid_all": if valid_all { "1" } else { "0" },
+                            "valid_receive": if valid_receive { "1" } else { "0" },
+                            "difficulty": format!("{:x}", result_difficulty),
+                            "multiplier": format!("{}", self.to_multiplier(result_difficulty)),
+                        }),
+                        false => json!({
+                            // "valid" removed to break loudly, see https://github.com/nanocurrency/nano-node/pull/2689
+                            "valid_all": if valid_all { "1" } else { "0" },
+                            "valid_receive": if valid_receive { "1" } else { "0" },
+                            "difficulty": format!("{:x}", result_difficulty),
+                            "multiplier": format!("{}", self.to_multiplier(result_difficulty)),
+                        })
+                    },
                 )))
             }
         }
@@ -454,18 +467,11 @@ fn main() {
                 .help("The GPU local work size. Increasing it may increase performance. For advanced users only."),
         )
         .arg(
-            clap::Arg::with_name("beta")
-                .long("beta")
-                .help("Generate work for the beta network. Modifies the base threshold for given multipliers or requests without a custom difficulty"),
-        )
-        .arg(
             clap::Arg::with_name("shuffle")
                 .long("shuffle")
                 .help("Pick a random request from the queue instead of the oldest. Increases efficiency when using multiple work servers")
         )
         .get_matches();
-    let beta = args.is_present("beta");
-    let base_difficulty = if beta {BETA_DIFFICULTY} else {LIVE_DIFFICULTY};
     let random_mode = args.is_present("shuffle");
     let listen_addr = args.value_of("listen_address")
         .unwrap()
@@ -664,14 +670,11 @@ fn main() {
     let server = Http::new()
         .bind(&listen_addr, move || {
             Ok(RpcService {
-                work_state: work_state.clone(),
-                base_difficulty
+                work_state: work_state.clone()
             })
         })
         .expect("Failed to bind server");
-    println!("Configured for the {} network with threshold {:x}",
-        if beta {"beta"} else {"live"},
-        base_difficulty);
+    println!("Configured for the live network with threshold {:x}", LIVE_DIFFICULTY);
     println!("Ready to receive requests on {}", listen_addr);
     server.run().expect("Error running server");
 }
