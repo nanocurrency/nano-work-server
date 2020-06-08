@@ -11,8 +11,8 @@ jobs:
           sudo add-apt-repository ppa:intel-opencl/intel-opencl
           sudo apt-get update
           sudo apt-get install ocl-icd-opencl-dev
-      - uses: actions/checkout@v2
-      - uses: actions-rs/toolchain@v1
+      - uses: actions/checkout@aabbfeb
+      - uses: actions-rs/toolchain@b2417cd
         with:
           toolchain: stable
       - name: Build
@@ -25,8 +25,8 @@ jobs:
           sudo add-apt-repository ppa:intel-opencl/intel-opencl
           sudo apt-get update
           sudo apt-get install ocl-icd-opencl-dev
-      - uses: actions/checkout@v2
-      - uses: actions-rs/toolchain@v1
+      - uses: actions/checkout@aabbfeb
+      - uses: actions-rs/toolchain@b2417cd
         with:
           toolchain: stable
       - name: Build release
