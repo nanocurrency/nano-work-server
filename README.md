@@ -1,5 +1,7 @@
 # Nano work server
 
+![Build](https://github.com/nanocurrency/nano-work-server/workflows/Build/badge.svg)
+
 This project is a dedicated work server for [the Nano cryptocurrency](https://nano.org/).
 
 It supports the `work_generate`, `work_cancel`, and `work_validate` commands from the Nano RPC.
