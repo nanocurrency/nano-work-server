@@ -54,10 +54,10 @@ cargo build --release
 Windows:
 
 ```bash
-cargo rustc --release --
+cargo rustc --release
 ```
 
-Depending on your system configuration, it may be necessary to link against OpenCL explicitly by adding `-l OpenCL -L "/path/to/opencl.lib"`
+Depending on your system configuration, it may be necessary to link against OpenCL explicitly by adding `-- -l OpenCL -L "/path/to/opencl.lib"`
 
 ## Using
 
