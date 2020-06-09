@@ -102,9 +102,9 @@ struct RpcService {
 }
 
 enum RpcCommand {
-    WorkGenerate([u8; 32], u64, Option<f64>),
+    WorkGenerate([u8; 32], Option<u64>, Option<f64>),
     WorkCancel([u8; 32]),
-    WorkValidate([u8; 32], [u8; 8], u64, Option<f64>, bool),
+    WorkValidate([u8; 32], [u8; 8], Option<u64>, Option<f64>),
 }
 
 enum HexJsonError {
@@ -276,7 +276,7 @@ impl RpcService {
             }
             Some(action) if action == "work_generate" => Ok(RpcCommand::WorkGenerate(
                 Self::parse_hash_json(&json)?,
-                Self::parse_difficulty_json(&json)?.unwrap_or(LIVE_DIFFICULTY),
+                Self::parse_difficulty_json(&json)?,
                 Self::parse_multiplier_json(&json)?,
             )),
             Some(action) if action == "work_cancel" => {
@@ -285,9 +285,8 @@ impl RpcService {
             Some(action) if action == "work_validate" => Ok(RpcCommand::WorkValidate(
                 Self::parse_hash_json(&json)?,
                 Self::parse_work_json(&json)?,
-                Self::parse_difficulty_json(&json)?.unwrap_or(LIVE_DIFFICULTY),
+                Self::parse_difficulty_json(&json)?,
                 Self::parse_multiplier_json(&json)?,
-                json.get("difficulty").is_some() || json.get("multiplier").is_some(),
             )),
             Some(_) => {
                 return Err(json!({
@@ -321,7 +320,7 @@ impl RpcService {
         match command {
             RpcCommand::WorkGenerate(root, difficulty, multiplier) => {
                 let difficulty = match multiplier {
-                    None => difficulty,
+                    None => difficulty.unwrap_or(LIVE_DIFFICULTY),
                     Some(multiplier) => self.from_multiplier(multiplier)
                 };
                 Box::new(self.generate_work(root, difficulty).then(move |res| match res {
@@ -364,26 +363,26 @@ impl RpcService {
                 self.cancel_work(root);
                 Box::new(Box::new(future::ok((StatusCode::Ok, json!({})))))
             }
-            RpcCommand::WorkValidate(root, work, difficulty, multiplier, difficulty_or_multiplier_present) => {
+            RpcCommand::WorkValidate(root, work, difficulty, multiplier) => {
                 let _ = println!("Validate {}", hex::encode_upper(&root));
-                let difficulty = match multiplier {
-                    None => difficulty,
+                let difficulty_l = match multiplier {
+                    None => difficulty.unwrap_or(LIVE_DIFFICULTY),
                     Some(multiplier) => self.from_multiplier(multiplier)
                 };
-                let (valid, result_difficulty) = work_valid(root, work, difficulty);
+                let (valid, result_difficulty) = work_valid(root, work, difficulty_l);
                 let (valid_all, _) = work_valid(root, work, LIVE_DIFFICULTY);
                 let (valid_receive, _) = work_valid(root, work, LIVE_RECEIVE_DIFFICULTY);
                 Box::new(future::ok((
                     StatusCode::Ok,
-                    match difficulty_or_multiplier_present {
-                        true => json!({
+                    match difficulty {
+                        Some(_) => json!({
                             "valid": if valid { "1" } else { "0" },
                             "valid_all": if valid_all { "1" } else { "0" },
                             "valid_receive": if valid_receive { "1" } else { "0" },
                             "difficulty": format!("{:x}", result_difficulty),
                             "multiplier": format!("{}", self.to_multiplier(result_difficulty)),
                         }),
-                        false => json!({
+                        None => json!({
                             // "valid" removed to break loudly, see https://github.com/nanocurrency/nano-node/pull/2689
                             "valid_all": if valid_all { "1" } else { "0" },
                             "valid_receive": if valid_receive { "1" } else { "0" },
