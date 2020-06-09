@@ -25,8 +25,8 @@ sudo dnf install ocl-icd-devel
 ```
 
 Windows:
-- AMD GPU: Executable from https://github.com/GPUOpen-LibrariesAndSDKs/OCL-SDK/releases/ will install the required `opencl.lib` in `C:\Program Files (x86)\OCL_SDK_Light\lib\x86_64`
-- Nvidia GPU: Through the CUDA toolkit from https://developer.nvidia.com/cuda-toolkit
+- AMD GPU: [OCL-SDK](https://github.com/GPUOpen-LibrariesAndSDKs/OCL-SDK/releases/)
+- Nvidia GPU: [CUDA Toolkit](https://developer.nvidia.com/cuda-toolkit)
 
 ### Rust
 
@@ -36,7 +36,7 @@ Linux:
 curl https://sh.rustup.rs -sSf | sh
 ```
 
-Windows: install using `rustup` from https://www.rust-lang.org/tools/install
+Windows: follow instructions in https://www.rust-lang.org/tools/install
 
 ### Build
 
@@ -54,8 +54,10 @@ cargo build --release
 Windows:
 
 ```bash
-cargo rustc --release -- -l OpenCL -L "/path/to/opencl.lib"
+cargo rustc --release --
 ```
+
+Depending on your system configuration, it may be necessary to link against OpenCL explicitly by adding `-l OpenCL -L "/path/to/opencl.lib"`
 
 ## Using
 
