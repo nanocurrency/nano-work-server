@@ -374,21 +374,17 @@ impl RpcService {
                 let (valid_receive, _) = work_valid(root, work, LIVE_RECEIVE_DIFFICULTY);
                 Box::new(future::ok((
                     StatusCode::Ok,
-                    match difficulty {
-                        Some(_) => json!({
-                            "valid": if valid { "1" } else { "0" },
+                    {
+                        let mut result = json!({
                             "valid_all": if valid_all { "1" } else { "0" },
                             "valid_receive": if valid_receive { "1" } else { "0" },
                             "difficulty": format!("{:x}", result_difficulty),
                             "multiplier": format!("{}", self.to_multiplier(result_difficulty)),
-                        }),
-                        None => json!({
-                            // "valid" removed to break loudly, see https://github.com/nanocurrency/nano-node/pull/2689
-                            "valid_all": if valid_all { "1" } else { "0" },
-                            "valid_receive": if valid_receive { "1" } else { "0" },
-                            "difficulty": format!("{:x}", result_difficulty),
-                            "multiplier": format!("{}", self.to_multiplier(result_difficulty)),
-                        })
+                        });
+                        if difficulty.is_some() {
+                            result.as_object_mut().unwrap().insert(String::from("valid"), json!(if valid {"1"} else {"0"}));
+                        }
+                        result
                     },
                 )))
             }
