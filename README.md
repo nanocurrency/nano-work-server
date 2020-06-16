@@ -2,9 +2,9 @@
 
 ![Build](https://github.com/nanocurrency/nano-work-server/workflows/Build/badge.svg)
 
-This project is a dedicated work server for [the Nano cryptocurrency](https://nano.org/).
+This project is a dedicated work server for [the Nano cryptocurrency](https://nano.org/). See the [documentation](https://docs.nano.org/integration-guides/work-generation/) for details on work generation and the current network difficulty.
 
-It supports the `work_generate`, `work_cancel`, and `work_validate` commands from the Nano RPC.
+**nano-work-server** supports the `work_generate`, `work_cancel`, and `work_validate` commands from the Nano RPC.
 For details on these commands, see [the Nano RPC documentation](https://docs.nano.org/commands/rpc-protocol/).
 
 To see available command line options, run `nano-work-server --help`.
@@ -47,6 +47,8 @@ cd target/release
 
 ## Using
 
+_Note_ difficulty values may be outdated in these examples.
+
 - `work_generate` example:
 
     ```json
@@ -87,7 +89,6 @@ cd target/release
         "difficulty": "ffffffd21c3933f4",
         "multiplier": "1.3946469"
     }
-
     ```
 
 - `work_cancel` example:
