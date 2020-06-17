@@ -29,23 +29,37 @@ Fedora:
 sudo dnf install ocl-icd-devel
 ```
 
+Windows:
+- AMD GPU: [OCL-SDK](https://github.com/GPUOpen-LibrariesAndSDKs/OCL-SDK/releases/)
+- Nvidia GPU: [CUDA Toolkit](https://developer.nvidia.com/cuda-toolkit)
+
 ### Rust
+
+Linux:
 
 ```
 curl https://sh.rustup.rs -sSf | sh
 ```
 
-### Build and run
+Windows: follow instructions in https://www.rust-lang.org/tools/install
 
-```
+### Build
+
+```bash
 git clone https://github.com/nanocurrency/nano-work-server.git
 cd nano-work-server
 cargo build --release
-cd target/release
-./nano-work-server --help
+```
+
+Depending on your system configuration and if the OpenCL library cannot be found in the `PATH`, it may be necessary to link against explicitly:
+
+```bash
+cargo rustc --release -- -l OpenCL -L "/path/to/opencl.lib"`
 ```
 
 ## Using
+
+`nano-work-server --help`
 
 _Note_ difficulty values may be outdated in these examples.
 
