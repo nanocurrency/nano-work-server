@@ -13,6 +13,10 @@ To use with the beta network (lower work difficulty), give the flag `--beta`. Wo
 
 If using more than one work peer, give the flag `--shuffle`. This makes it so that the next request is picked randomly instead of sequentially, which leads to more efficient work generation with multiple peers, especially when they are not in the same network.
 
+## Current base difficulty
+
+`0xfffffff800000000` since [a75d984](https://github.com/nanocurrency/nano-work-server/commit/a75d98429a11fcb0c129a55380996a612299917b). See the [Nano work generation guide](https://docs.nano.org/integration-guides/work-generation/#difficulty-thresholds) for more information.
+
 ## Installation
 
 ### OpenCL
