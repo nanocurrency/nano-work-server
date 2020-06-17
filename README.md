@@ -48,21 +48,14 @@ Windows: follow instructions in https://www.rust-lang.org/tools/install
 ```bash
 git clone https://github.com/nanocurrency/nano-work-server.git
 cd nano-work-server
-```
-
-Linux:
-
-```bash
 cargo build --release
 ```
 
-Windows:
+Depending on your system configuration and if the OpenCL library cannot be found in the `PATH`, it may be necessary to link against explicitly:
 
 ```bash
-cargo rustc --release
+cargo rustc --release -- -l OpenCL -L "/path/to/opencl.lib"`
 ```
-
-Depending on your system configuration, it may be necessary to link against OpenCL explicitly by adding `-- -l OpenCL -L "/path/to/opencl.lib"`
 
 ## Using
 
