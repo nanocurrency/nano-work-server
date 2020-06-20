@@ -101,7 +101,8 @@ _Note_ difficulty values may be outdated in these examples.
 
     ```json
     {
-        "valid": "1",
+        "valid_all": "1",
+        "valid_receive": "1",
         "difficulty": "ffffffd21c3933f4",
         "multiplier": "1.3946469"
     }
