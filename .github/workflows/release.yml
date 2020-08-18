@@ -20,11 +20,15 @@ jobs:
           toolchain: stable
       - name: Build release
         run: cargo build --release
+      - name: Generate sha256sum
+        run: pushd target/release/; sha256sum nano-work-server > nano-work-server.sha256; popd
       - name: Upload artifact
         uses: svenstaro/upload-release-action@14569a2
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           file: target/release/nano-work-server
           asset_name: nano-work-server
+          file: target/release/nano-work-server.sha256
+          asset_name: nano-work-server.sha256
           tag: ${{ github.ref }}
           overwrite: true
