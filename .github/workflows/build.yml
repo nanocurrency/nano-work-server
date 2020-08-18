@@ -3,7 +3,7 @@ name: Build
 on: [pull_request, push]
 
 jobs:
-  debug:
+  debug-linux:
     runs-on: ubuntu-latest
     steps:
       - name: Install OpenCL
@@ -17,7 +17,7 @@ jobs:
           toolchain: stable
       - name: Build
         run: cargo build
-  release:
+  release-linux:
     runs-on: ubuntu-latest
     steps:
       - name: Install OpenCL
@@ -31,3 +31,25 @@ jobs:
           toolchain: stable
       - name: Build release
         run: cargo build --release
+  debug-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@aabbfeb
+      - uses: actions-rs/toolchain@b2417cd
+        with:
+          toolchain: stable
+      - name: Opencl.lib
+        run: curl -o OpenCL.lib https://s3.us-east-2.amazonaws.com/repo.nano.org/artifacts/OpenCL.lib
+      - name: Build
+        run: cargo rustc -- -l OpenCL -L "OpenCL.lib"
+  release-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@aabbfeb
+      - uses: actions-rs/toolchain@b2417cd
+        with:
+          toolchain: stable
+      - name: Opencl.lib
+        run: curl -o OpenCL.lib https://s3.us-east-2.amazonaws.com/repo.nano.org/artifacts/OpenCL.lib
+      - name: Build
+        run: cargo rustc --release -- -l OpenCL -L "OpenCL.lib"
