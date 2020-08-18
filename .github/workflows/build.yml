@@ -34,22 +34,22 @@ jobs:
   debug-windows:
     runs-on: windows-latest
     steps:
-      - name: Install OpenCL
-        run: choco install -y cuda
       - uses: actions/checkout@aabbfeb
       - uses: actions-rs/toolchain@b2417cd
         with:
           toolchain: stable
+      - name: Opencl.lib
+        run: curl -o OpenCL.lib https://s3.us-east-2.amazonaws.com/repo.nano.org/artifacts/OpenCL.lib
       - name: Build
-        run: cargo build
+        run: cargo rustc -- -l OpenCL -L "OpenCL.lib"
   release-windows:
     runs-on: windows-latest
     steps:
-      - name: Install OpenCL
-        run: choco install -y cuda
       - uses: actions/checkout@aabbfeb
       - uses: actions-rs/toolchain@b2417cd
         with:
           toolchain: stable
+      - name: Opencl.lib
+        run: curl -o OpenCL.lib https://s3.us-east-2.amazonaws.com/repo.nano.org/artifacts/OpenCL.lib
       - name: Build
-        run: cargo build --release
+        run: cargo rustc --release -- -l OpenCL -L "OpenCL.lib"
