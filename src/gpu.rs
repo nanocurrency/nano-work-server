@@ -1,11 +1,11 @@
 use ocl;
-use ocl::ProQue;
-use ocl::Result;
+use ocl::builders::DeviceSpecifier;
+use ocl::builders::ProgramBuilder;
+use ocl::flags::MemFlags;
 use ocl::Buffer;
 use ocl::Platform;
-use ocl::flags::MemFlags;
-use ocl::builders::ProgramBuilder;
-use ocl::builders::DeviceSpecifier;
+use ocl::ProQue;
+use ocl::Result;
 
 use byteorder::{ByteOrder, LittleEndian};
 
@@ -17,7 +17,12 @@ pub struct Gpu {
 }
 
 impl Gpu {
-    pub fn new(platform_idx: usize, device_idx: usize, threads: usize, local_work_size: Option<usize>) -> Result<Gpu> {
+    pub fn new(
+        platform_idx: usize,
+        device_idx: usize,
+        threads: usize,
+        local_work_size: Option<usize>,
+    ) -> Result<Gpu> {
         let mut prog_bldr = ProgramBuilder::new();
         prog_bldr.src(include_str!("work.cl"));
         let platforms = Platform::list();
@@ -29,7 +34,8 @@ impl Gpu {
                 "Platform index {} too large (max {})",
                 platform_idx,
                 platforms.len() - 1
-            ).into());
+            )
+            .into());
         }
         let pro_que = ProQue::builder()
             .prog_bldr(prog_bldr)
