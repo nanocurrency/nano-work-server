@@ -3,7 +3,7 @@ name: Build
 on: [pull_request, push]
 
 jobs:
-  debug:
+  debug-linux:
     runs-on: ubuntu-latest
     steps:
       - name: Install OpenCL
@@ -17,7 +17,7 @@ jobs:
           toolchain: stable
       - name: Build
         run: cargo build
-  release:
+  release-linux:
     runs-on: ubuntu-latest
     steps:
       - name: Install OpenCL
@@ -30,4 +30,26 @@ jobs:
         with:
           toolchain: stable
       - name: Build release
+        run: cargo build --release
+  debug-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Install OpenCL
+        run: choco install -y cuda
+      - uses: actions/checkout@aabbfeb
+      - uses: actions-rs/toolchain@b2417cd
+        with:
+          toolchain: stable
+      - name: Build
+        run: cargo build
+  release-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Install OpenCL
+        run: choco install -y cuda
+      - uses: actions/checkout@aabbfeb
+      - uses: actions-rs/toolchain@b2417cd
+        with:
+          toolchain: stable
+      - name: Build
         run: cargo build --release
