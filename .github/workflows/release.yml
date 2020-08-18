@@ -28,6 +28,12 @@ jobs:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           file: target/release/nano-work-server
           asset_name: nano-work-server
+          tag: ${{ github.ref }}
+          overwrite: true
+      - name: Upload sha256
+        uses: svenstaro/upload-release-action@14569a2
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
           file: target/release/nano-work-server.sha256
           asset_name: nano-work-server.sha256
           tag: ${{ github.ref }}
@@ -51,6 +57,12 @@ jobs:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           file: target/release/nano-work-server.exe
           asset_name: nano-work-server.exe
+          tag: ${{ github.ref }}
+          overwrite: true 
+      - name: Upload sha256
+        uses: svenstaro/upload-release-action@14569a2
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
           file: target/release/nano-work-server.exe.sha256
           asset_name: nano-work-server.exe.sha256
           tag: ${{ github.ref }}
