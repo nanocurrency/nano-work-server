@@ -6,7 +6,7 @@ on:
       - '*'
 
 jobs:
-  artifacts:
+  artifacts-linux:
     runs-on: ubuntu-latest
     steps:
       - name: Install OpenCL
@@ -32,3 +32,26 @@ jobs:
           asset_name: nano-work-server.sha256
           tag: ${{ github.ref }}
           overwrite: true
+  artifacts-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@aabbfeb
+      - uses: actions-rs/toolchain@b2417cd
+        with:
+          toolchain: stable
+      - name: Opencl.lib
+        run: curl -o OpenCL.lib https://s3.us-east-2.amazonaws.com/repo.nano.org/artifacts/OpenCL.lib
+      - name: Build
+        run: cargo rustc --release -- -l OpenCL -L "OpenCL.lib"
+      - name: Generate sha256sum
+        run: pushd target/release/; sha256sum.exe nano-work-server.exe > nano-work-server.exe.sha256; popd
+      - name: Upload artifact
+        uses: svenstaro/upload-release-action@14569a2
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: target/release/nano-work-server.exe
+          asset_name: nano-work-server.exe
+          file: target/release/nano-work-server.exe.sha256
+          asset_name: nano-work-server.exe.sha256
+          tag: ${{ github.ref }}
+          overwrite: true 
