@@ -121,3 +121,29 @@ _Note_ difficulty values may be outdated in these examples.
     {
     }
     ```
+
+## Benchmarking
+
+Exame request:
+
+```json
+{
+    "action": "benchmark",
+    "count": "10"
+}
+```
+
+_Note_ use a sufficiently high count as work generation is a random process.
+
+Example response:
+
+```json
+{
+    "average": "481",
+    "count": "10",
+    "difficulty": "fffffff800000000",
+    "duration": "4813",
+    "hint": "Times in milliseconds",
+    "multiplier": "1"
+}
+```
