@@ -124,7 +124,7 @@ _Note_ difficulty values may be outdated in these examples.
 
 ## Benchmarking
 
-Exame request:
+Example request:
 
 ```json
 {
