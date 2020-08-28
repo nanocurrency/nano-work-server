@@ -480,8 +480,8 @@ impl RpcService {
                 let state = self.work_state.0.lock();
                 let queue_size = state.future_work.len();
                 let resp = json!({
-                    "queue_size": queue_size,
-                    "generating": !state.task_complete.load(atomic::Ordering::Relaxed),
+                    "queue_size": format!("{}", queue_size),
+                    "generating": if state.task_complete.load(atomic::Ordering::Relaxed) {"0"} else {"1"},
                 });
                 let _ = println!("Status {}", resp);
                 Box::new(Box::new(future::ok((StatusCode::Ok, resp))))
