@@ -481,6 +481,7 @@ impl RpcService {
                 let queue_size = state.future_work.len();
                 let resp = json!({
                     "queue_size": queue_size,
+                    "generating": !state.task_complete.load(atomic::Ordering::Relaxed),
                 });
                 let _ = println!("Status {}", resp);
                 Box::new(Box::new(future::ok((StatusCode::Ok, resp))))
@@ -617,6 +618,7 @@ fn main() {
     let work_state = Arc::new((Mutex::new(WorkState::default()), Condvar::new()));
     {
         let mut state = work_state.0.lock();
+        state.task_complete.store(true, atomic::Ordering::Relaxed);
         state.random_mode = random_mode;
     }
     let mut worker_handles = Vec::new();
