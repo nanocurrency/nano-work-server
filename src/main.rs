@@ -327,11 +327,11 @@ impl RpcService {
                 Self::parse_multiplier_json(&json)?,
                 Self::parse_count_json(&json)?,
             )),
-            Some(action) if action == "work_server_status" => Ok(RpcCommand::Status()),
+            Some(action) if action == "status" => Ok(RpcCommand::Status()),
             Some(_) => {
                 return Err(json!({
                     "error": "Unknown command",
-                    "hint": "Supported commands: work_generate, work_cancel, work_validate, work_server_status"
+                    "hint": "Supported commands: work_generate, work_cancel, work_validate, benchmark, status"
                 }))
             }
         }
