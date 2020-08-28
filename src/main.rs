@@ -110,6 +110,7 @@ enum RpcCommand {
     WorkCancel([u8; 32]),
     WorkValidate([u8; 32], [u8; 8], Option<u64>, Option<f64>),
     Benchmark(Option<u64>, Option<f64>, u64),
+    Status(),
 }
 
 enum HexJsonError {
@@ -326,10 +327,11 @@ impl RpcService {
                 Self::parse_multiplier_json(&json)?,
                 Self::parse_count_json(&json)?,
             )),
+            Some(action) if action == "work_server_status" => Ok(RpcCommand::Status()),
             Some(_) => {
                 return Err(json!({
                     "error": "Unknown command",
-                    "hint": "Supported commands: work_generate, work_cancel, work_validate"
+                    "hint": "Supported commands: work_generate, work_cancel, work_validate, work_server_status"
                 }))
             }
         }
@@ -473,6 +475,15 @@ impl RpcService {
                         "hint": "Times in milliseconds",
                     })
                 })))
+            }
+            RpcCommand::Status() => {
+                let state = self.work_state.0.lock();
+                let queue_size = state.future_work.len();
+                let resp = json!({
+                    "queue_size": queue_size,
+                });
+                let _ = println!("Status {}", resp);
+                Box::new(Box::new(future::ok((StatusCode::Ok, resp))))
             }
         }
     }
