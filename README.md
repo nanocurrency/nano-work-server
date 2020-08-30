@@ -56,7 +56,7 @@ cargo build --release
 Depending on your system configuration and if the OpenCL library cannot be found in the `PATH`, it may be necessary to link against explicitly:
 
 ```bash
-cargo rustc --release -- -l OpenCL -L "/path/to/opencl.lib"`
+cargo rustc --release -- -l OpenCL -L "/path/to/opencl.lib"
 ```
 
 ## Using
