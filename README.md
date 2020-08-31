@@ -147,3 +147,22 @@ Example response:
     "multiplier": "1"
 }
 ```
+
+## Status
+
+Example request:
+
+```json
+{
+    "action": "status"
+}
+```
+
+Example response:
+
+```json
+{
+    "generating": "1",
+    "queue_size": "3"
+}
+```

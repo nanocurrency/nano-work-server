@@ -110,6 +110,7 @@ enum RpcCommand {
     WorkCancel([u8; 32]),
     WorkValidate([u8; 32], [u8; 8], Option<u64>, Option<f64>),
     Benchmark(Option<u64>, Option<f64>, u64),
+    Status(),
 }
 
 enum HexJsonError {
@@ -326,10 +327,11 @@ impl RpcService {
                 Self::parse_multiplier_json(&json)?,
                 Self::parse_count_json(&json)?,
             )),
+            Some(action) if action == "status" => Ok(RpcCommand::Status()),
             Some(_) => {
                 return Err(json!({
                     "error": "Unknown command",
-                    "hint": "Supported commands: work_generate, work_cancel, work_validate"
+                    "hint": "Supported commands: work_generate, work_cancel, work_validate, benchmark, status"
                 }))
             }
         }
@@ -474,6 +476,16 @@ impl RpcService {
                     })
                 })))
             }
+            RpcCommand::Status() => {
+                let state = self.work_state.0.lock();
+                let queue_size = state.future_work.len();
+                let resp = json!({
+                    "queue_size": format!("{}", queue_size),
+                    "generating": if state.task_complete.load(atomic::Ordering::Relaxed) {"0"} else {"1"},
+                });
+                let _ = println!("Status {}", resp);
+                Box::new(Box::new(future::ok((StatusCode::Ok, resp))))
+            }
         }
     }
 }
@@ -606,6 +618,7 @@ fn main() {
     let work_state = Arc::new((Mutex::new(WorkState::default()), Condvar::new()));
     {
         let mut state = work_state.0.lock();
+        state.task_complete.store(true, atomic::Ordering::Relaxed);
         state.random_mode = random_mode;
     }
     let mut worker_handles = Vec::new();
