@@ -97,12 +97,17 @@ static inline uint64_t to_u64(constant uint* lo_hi)
 static inline void atomic_store_result(volatile device atomic_uint* out, uint64_t val, uint64_t difficulty)
 {
     uint expected = 0;
-    if (atomic_compare_exchange_weak_explicit(&out[0], &expected, val & 0x00000000ffffffffULL, memory_order_relaxed, memory_order_relaxed))
-    {
-        atomic_store_explicit(&out[1], static_cast<uint>(val >> 32), memory_order_relaxed);
-        atomic_store_explicit(&out[2], static_cast<uint>(difficulty & 0x00000000ffffffffULL), memory_order_relaxed);
-        atomic_store_explicit(&out[3], static_cast<uint>(difficulty >> 32), memory_order_relaxed);
+
+    // MSL does not have a strong compare/exchange
+    while (!atomic_compare_exchange_weak_explicit(&out[0], &expected, val & 0x00000000ffffffffULL, memory_order_relaxed, memory_order_relaxed)) {
+        if (expected) {
+            return;
+        }
     }
+
+    atomic_store_explicit(&out[1], static_cast<uint>(val >> 32), memory_order_relaxed);
+    atomic_store_explicit(&out[2], static_cast<uint>(difficulty & 0x00000000ffffffffULL), memory_order_relaxed);
+    atomic_store_explicit(&out[3], static_cast<uint>(difficulty >> 32), memory_order_relaxed);
 }
 
 /**
