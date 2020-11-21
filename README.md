@@ -19,28 +19,33 @@ If using more than one work peer, give the flag `--shuffle`. This makes it so th
 
 ### OpenCL
 
-Ubuntu:
+**Ubuntu:**
 
 ```
 sudo apt install ocl-icd-opencl-dev
 ```
 
-Fedora:
+**Fedora:**
 
 ```
 sudo dnf install ocl-icd-devel
 ```
 
-Windows:
+**Windows:**
 - AMD GPU: [OCL-SDK](https://github.com/GPUOpen-LibrariesAndSDKs/OCL-SDK/releases/)
 - Nvidia GPU: [CUDA Toolkit](https://developer.nvidia.com/cuda-toolkit)
 
+**macOS:**
+OpenCL is deprecated on macOS, but is still supported and is preinstalled on the OS.
+
+To use Metal SDK rather then OpenCL, pass `--features metalsdk` when building.
+
 ### Rust
 
-Linux:
+Linux and macOS:
 
 ```
-curl https://sh.rustup.rs -sSf | sh
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 ```
 
 Windows: follow instructions in https://www.rust-lang.org/tools/install
@@ -58,6 +63,14 @@ Depending on your system configuration and if the OpenCL library cannot be found
 ```bash
 cargo rustc --release -- -l OpenCL -L "/path/to/opencl.lib"
 ```
+
+On macOS, to use Metal SDK rather than OpenCL for GPU computations:
+
+```bash
+cargo build --release --features metalsdk
+```
+
+If using vscode for development, remember to activate the `metalsdk` feature in the language server extensions (such as rust-analyzer)
 
 ## Using
 
