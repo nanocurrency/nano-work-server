@@ -17,7 +17,7 @@ If using more than one work peer, give the flag `--shuffle`. This makes it so th
 
 ## Installation
 
-### OpenCL
+### OpenCL 
 
 Ubuntu:
 
@@ -44,6 +44,20 @@ curl https://sh.rustup.rs -sSf | sh
 ```
 
 Windows: follow instructions in https://www.rust-lang.org/tools/install
+
+### GCC
+
+Ubuntu:
+
+```
+sudo apt install gcc
+```
+
+Fedora:
+
+```
+sudo dnf install gcc
+```
 
 ### Build
 
