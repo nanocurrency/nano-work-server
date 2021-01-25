@@ -11,8 +11,8 @@ jobs:
           sudo add-apt-repository ppa:intel-opencl/intel-opencl
           sudo apt-get update
           sudo apt-get install ocl-icd-opencl-dev
-      - uses: actions/checkout@aabbfeb
-      - uses: actions-rs/toolchain@b2417cd
+      - uses: actions/checkout@aabbfeb2ce60b5bd82389903509092c4648a9713
+      - uses: actions-rs/toolchain@b2417cde72dcf67f306c0ae8e0828a81bf0b189f
         with:
           toolchain: stable
       - name: Build
@@ -25,8 +25,8 @@ jobs:
           sudo add-apt-repository ppa:intel-opencl/intel-opencl
           sudo apt-get update
           sudo apt-get install ocl-icd-opencl-dev
-      - uses: actions/checkout@aabbfeb
-      - uses: actions-rs/toolchain@b2417cd
+      - uses: actions/checkout@aabbfeb2ce60b5bd82389903509092c4648a9713
+      - uses: actions-rs/toolchain@b2417cde72dcf67f306c0ae8e0828a81bf0b189f
         with:
           toolchain: stable
       - name: Build release
@@ -34,8 +34,8 @@ jobs:
   debug-windows:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@aabbfeb
-      - uses: actions-rs/toolchain@b2417cd
+      - uses: actions/checkout@aabbfeb2ce60b5bd82389903509092c4648a9713
+      - uses: actions-rs/toolchain@b2417cde72dcf67f306c0ae8e0828a81bf0b189f
         with:
           toolchain: stable
       - name: Opencl.lib
@@ -45,8 +45,8 @@ jobs:
   release-windows:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@aabbfeb
-      - uses: actions-rs/toolchain@b2417cd
+      - uses: actions/checkout@aabbfeb2ce60b5bd82389903509092c4648a9713
+      - uses: actions-rs/toolchain@b2417cde72dcf67f306c0ae8e0828a81bf0b189f
         with:
           toolchain: stable
       - name: Opencl.lib
