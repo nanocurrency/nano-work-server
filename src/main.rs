@@ -12,7 +12,9 @@ extern crate time;
 #[macro_use]
 extern crate serde_json;
 
+#[cfg_attr(feature = "metalsdk", path = "gpu_metal.rs")]
 mod gpu;
+use gpu::Gpu;
 
 use std::process;
 use std::sync::atomic::{self, AtomicBool};
@@ -41,8 +43,6 @@ use byteorder::{ByteOrder, LittleEndian};
 use parking_lot::{Condvar, Mutex};
 
 use time::PreciseTime;
-
-use gpu::Gpu;
 
 const LIVE_DIFFICULTY: u64 = 0xfffffff800000000;
 const LIVE_RECEIVE_DIFFICULTY: u64 = 0xfffffe0000000000;
