@@ -359,6 +359,7 @@ impl RpcService {
         let start = PreciseTime::now();
         match command {
             RpcCommand::WorkGenerate(root, difficulty, multiplier) => {
+                let _ = println!("Received work from {}", hex::encode_upper(&root));
                 let difficulty = match multiplier {
                     None => difficulty.unwrap_or(LIVE_DIFFICULTY),
                     Some(multiplier) => self.from_multiplier(multiplier),
