@@ -11,6 +11,7 @@ extern crate rand;
 extern crate time;
 #[macro_use]
 extern crate serde_json;
+extern crate chrono;
 
 mod gpu;
 
@@ -41,6 +42,7 @@ use byteorder::{ByteOrder, LittleEndian};
 use parking_lot::{Condvar, Mutex};
 
 use time::PreciseTime;
+use chrono::{DateTime, Utc};
 
 use gpu::Gpu;
 
@@ -359,7 +361,8 @@ impl RpcService {
         let start = PreciseTime::now();
         match command {
             RpcCommand::WorkGenerate(root, difficulty, multiplier) => {
-                let _ = println!("Received work from {}", hex::encode_upper(&root));
+                let now: DateTime<Utc> = Utc::now();
+                let _ = println!("{} Received work from {}", now.format("%T"), hex::encode_upper(&root));
                 let difficulty = match multiplier {
                     None => difficulty.unwrap_or(LIVE_DIFFICULTY),
                     Some(multiplier) => self.from_multiplier(multiplier),
@@ -371,8 +374,10 @@ impl RpcService {
                                 let end = PreciseTime::now();
                                 let result_difficulty = work_value(root, work);
                                 let result_multiplier = self.to_multiplier(result_difficulty);
+                                let now: DateTime<Utc> = Utc::now();
                                 let _ = println!(
-                                    "Generated for {} in {}ms for difficulty {:x}",
+                                    "{} Generated for {} in {}ms for difficulty {:x}",
+                                    now.format("%T"),
                                     hex::encode_upper(&root),
                                     start.to(end).num_milliseconds(),
                                     difficulty
