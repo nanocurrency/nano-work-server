@@ -362,7 +362,7 @@ impl RpcService {
         match command {
             RpcCommand::WorkGenerate(root, difficulty, multiplier) => {
                 let now: DateTime<Utc> = Utc::now();
-                let _ = println!("{} Received work from {}", now.format("%T"), hex::encode_upper(&root));
+                let _ = println!("{} Received work for {}", now.format("%T"), hex::encode_upper(&root));
                 let difficulty = match multiplier {
                     None => difficulty.unwrap_or(LIVE_DIFFICULTY),
                     Some(multiplier) => self.from_multiplier(multiplier),
