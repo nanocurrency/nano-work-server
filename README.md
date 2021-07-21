@@ -166,3 +166,7 @@ Example response:
     "queue_size": "3"
 }
 ```
+
+## Troubleshooting
+
+- Linux OpenCL AMD GPU series error: `thread 'main' panicked at 'Failed to create GPU from string "00:00"` - see [solution here](https://github.com/nanocurrency/nano-work-server/issues/28)
