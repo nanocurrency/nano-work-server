@@ -8,7 +8,7 @@ description = "A dedicated work server for the Nano cryptocurrency"
 
 [dependencies]
 futures = "0.1.17"
-hyper = "0.11.25"
+hyper = "0.14.10"
 clap = "2.31.2"
 ocl = "0.19"
 serde_json = "1.0.17"
