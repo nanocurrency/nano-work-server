@@ -105,7 +105,7 @@ impl Gpu {
         Ok(())
     }
 
-    pub fn try(&mut self, out: &mut [u8], attempt: u64) -> Result<bool> {
+    pub fn run(&mut self, out: &mut [u8], attempt: u64) -> Result<bool> {
         let mut attempt_bytes = [0u8; 8];
         LittleEndian::write_u64(&mut attempt_bytes, attempt);
         self.attempt.write(&attempt_bytes as &[u8]).enq()?;
