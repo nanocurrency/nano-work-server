@@ -1,47 +1,34 @@
-extern crate blake2;
-extern crate byteorder;
-extern crate clap;
-extern crate digest;
-extern crate futures;
-extern crate hex;
-extern crate hyper;
-extern crate ocl;
-extern crate parking_lot;
-extern crate rand;
-extern crate time;
-#[macro_use]
-extern crate serde_json;
-extern crate chrono;
-
 mod gpu;
 
+use std::convert::Infallible;
 use std::process;
 use std::sync::atomic::{self, AtomicBool};
 use std::sync::Arc;
 use std::thread;
+use std::time::Instant;
 use std::u64;
 use std::vec::Vec;
 
-use futures::future::{self, Either, Future};
-use futures::sync::oneshot;
-use futures::Stream;
+use futures::channel::oneshot;
+use futures::future::{self, Future};
+use futures::TryFutureExt;
 
-use hyper::server::{Http, Request, Response, Service};
-use hyper::StatusCode;
+use hyper::{Body, Request, Response, Server, StatusCode};
 
-use serde_json::Value;
+use serde_json::{json, Value};
 
-use rand::Rng;
+use rand::{Rng, SeedableRng};
 
-use blake2::Blake2b;
+use rand_xorshift::XorShiftRng;
 
-use digest::{Input, VariableOutput};
+use blake2::Blake2bVar;
+
+use digest::{Update, VariableOutput};
 
 use byteorder::{ByteOrder, LittleEndian};
 
 use parking_lot::{Condvar, Mutex};
 
-use time::PreciseTime;
 use chrono::{DateTime, Utc};
 
 use gpu::Gpu;
@@ -51,10 +38,10 @@ const LIVE_RECEIVE_DIFFICULTY: u64 = 0xfffffe0000000000;
 
 fn work_value(root: [u8; 32], work: [u8; 8]) -> u64 {
     let mut buf = [0u8; 8];
-    let mut hasher = Blake2b::new(buf.len()).expect("Unsupported hash length");
-    hasher.process(&work);
-    hasher.process(&root);
-    hasher.variable_result(&mut buf).unwrap();
+    let mut hasher = Blake2bVar::new(buf.len()).expect("Unsupported hash length");
+    hasher.update(&work);
+    hasher.update(&root);
+    hasher.finalize_variable(&mut buf).unwrap();
     LittleEndian::read_u64(&buf as _)
 }
 
@@ -90,7 +77,7 @@ impl WorkState {
                 } else {
                     1
                 };
-                let i = rand::thread_rng().gen_range(0, max_range);
+                let i = rand::thread_rng().gen_range(0..max_range);
                 let (root, difficulty, callback) = self.future_work.remove(i);
                 self.root = root;
                 self.difficulty = difficulty;
@@ -127,16 +114,14 @@ impl RpcService {
         &self,
         root: [u8; 32],
         difficulty: u64,
-    ) -> Box<dyn Future<Item = [u8; 8], Error = WorkError>> {
+    ) -> impl Future<Output = Result<[u8; 8], WorkError>> {
         let mut state = self.work_state.0.lock();
         let (callback_send, callback_recv) = oneshot::channel();
         state.future_work.push((root, difficulty, callback_send));
         state.set_task(&self.work_state.1);
-        Box::new(
-            callback_recv
-                .map_err(|_| WorkError::Errored)
-                .and_then(|x| x),
-        )
+        callback_recv
+            .map_err(|_| WorkError::Errored)
+            .and_then(|x| future::ready(x))
     }
 
     fn cancel_work(&self, root: [u8; 32]) {
@@ -339,79 +324,76 @@ impl RpcService {
         }
     }
 
-    fn process_req(
-        self,
-        req: Result<Value, serde_json::Error>,
-    ) -> Box<dyn Future<Item = (StatusCode, Value), Error = hyper::Error>> {
-        let json = match req {
+    async fn process_req(self, body: &[u8]) -> hyper::Result<(StatusCode, Value)> {
+        let json = match serde_json::from_slice(body) {
             Ok(json) => json,
             Err(_) => {
-                return Box::new(future::ok((
-                    StatusCode::BadRequest,
+                return Ok((
+                    StatusCode::BAD_REQUEST,
                     json!({
                         "error": "Failed to deserialize JSON",
                     }),
-                )));
+                ));
             }
         };
         let command = match self.parse_json(json) {
             Ok(r) => r,
-            Err(err) => return Box::new(future::ok((StatusCode::BadRequest, err))),
+            Err(err) => return Ok((StatusCode::BAD_REQUEST, err)),
         };
-        let start = PreciseTime::now();
+        let start = Instant::now();
         match command {
             RpcCommand::WorkGenerate(root, difficulty, multiplier) => {
                 let now: DateTime<Utc> = Utc::now();
-                let _ = println!("{} Received work for {}", now.format("%T"), hex::encode_upper(&root));
+                let _ = println!(
+                    "{} Received work for {}",
+                    now.format("%T"),
+                    hex::encode_upper(&root)
+                );
                 let difficulty = match multiplier {
                     None => difficulty.unwrap_or(LIVE_DIFFICULTY),
                     Some(multiplier) => self.from_multiplier(multiplier),
                 };
-                Box::new(
-                    self.generate_work(root, difficulty)
-                        .then(move |res| match res {
-                            Ok(mut work) => {
-                                let end = PreciseTime::now();
-                                let result_difficulty = work_value(root, work);
-                                let result_multiplier = self.to_multiplier(result_difficulty);
-                                let now: DateTime<Utc> = Utc::now();
-                                let _ = println!(
-                                    "{} Generated for {} in {}ms for difficulty {:x}",
-                                    now.format("%T"),
-                                    hex::encode_upper(&root),
-                                    start.to(end).num_milliseconds(),
-                                    difficulty
-                                );
-                                // Reverse before encoding
-                                work.reverse();
-                                Ok((
-                                    StatusCode::Ok,
-                                    json!({
-                                        "work": hex::encode(&work),
-                                        "difficulty": format!("{:x}", result_difficulty),
-                                        "multiplier": format!("{}", result_multiplier),
-                                    }),
-                                ))
-                            }
-                            Err(WorkError::Canceled) => Ok((
-                                StatusCode::Ok,
-                                json!({
-                                    "error": "Cancelled",
-                                }),
-                            )),
-                            Err(WorkError::Errored) => Ok((
-                                StatusCode::Ok,
-                                json!({
-                                    "error": "Work generation failed (see logs for details)",
-                                }),
-                            )),
+                match self.generate_work(root, difficulty).await {
+                    Ok(mut work) => {
+                        let result_difficulty = work_value(root, work);
+                        let result_multiplier = self.to_multiplier(result_difficulty);
+                        let now: DateTime<Utc> = Utc::now();
+                        let _ = println!(
+                            "{} Generated for {} in {}ms for difficulty {:x}",
+                            now.format("%T"),
+                            hex::encode_upper(&root),
+                            start.elapsed().as_millis(),
+                            difficulty
+                        );
+                        // Reverse before encoding
+                        work.reverse();
+                        Ok((
+                            StatusCode::OK,
+                            json!({
+                                "work": hex::encode(&work),
+                                "difficulty": format!("{:x}", result_difficulty),
+                                "multiplier": format!("{}", result_multiplier),
+                            }),
+                        ))
+                    }
+                    Err(WorkError::Canceled) => Ok((
+                        StatusCode::OK,
+                        json!({
+                            "error": "Cancelled",
                         }),
-                )
+                    )),
+                    Err(WorkError::Errored) => Ok((
+                        StatusCode::OK,
+                        json!({
+                            "error": "Work generation failed (see logs for details)",
+                        }),
+                    )),
+                }
             }
             RpcCommand::WorkCancel(root) => {
                 let _ = println!("Cancel {}", hex::encode_upper(&root));
                 self.cancel_work(root);
-                Box::new(Box::new(future::ok((StatusCode::Ok, json!({})))))
+                Ok((StatusCode::OK, json!({})))
             }
             RpcCommand::WorkValidate(root, work, difficulty, multiplier) => {
                 let _ = println!("Validate {}", hex::encode_upper(&root));
@@ -422,21 +404,19 @@ impl RpcService {
                 let (valid, result_difficulty) = work_valid(root, work, difficulty_l);
                 let (valid_all, _) = work_valid(root, work, LIVE_DIFFICULTY);
                 let (valid_receive, _) = work_valid(root, work, LIVE_RECEIVE_DIFFICULTY);
-                Box::new(future::ok((StatusCode::Ok, {
-                    let mut result = json!({
-                        "valid_all": if valid_all { "1" } else { "0" },
-                        "valid_receive": if valid_receive { "1" } else { "0" },
-                        "difficulty": format!("{:x}", result_difficulty),
-                        "multiplier": format!("{}", self.to_multiplier(result_difficulty)),
-                    });
-                    if difficulty.is_some() {
-                        result
-                            .as_object_mut()
-                            .unwrap()
-                            .insert(String::from("valid"), json!(if valid { "1" } else { "0" }));
-                    }
+                let mut result = json!({
+                    "valid_all": if valid_all { "1" } else { "0" },
+                    "valid_receive": if valid_receive { "1" } else { "0" },
+                    "difficulty": format!("{:x}", result_difficulty),
+                    "multiplier": format!("{}", self.to_multiplier(result_difficulty)),
+                });
+                if difficulty.is_some() {
                     result
-                })))
+                        .as_object_mut()
+                        .unwrap()
+                        .insert(String::from("valid"), json!(if valid { "1" } else { "0" }));
+                }
+                Ok((StatusCode::OK, result))
             }
             RpcCommand::Benchmark(difficulty, multiplier, count) => {
                 let difficulty_l = match multiplier {
@@ -453,25 +433,24 @@ impl RpcService {
                 for _ in 0..count {
                     roots.push(rand::random())
                 }
-                let start = PreciseTime::now();
+                let start = Instant::now();
                 for root in roots {
-                    if self.generate_work(root, difficulty_l).wait().is_err() {
-                        return Box::new(future::ok((StatusCode::InternalServerError, {
+                    if self.generate_work(root, difficulty_l).await.is_err() {
+                        return Ok((StatusCode::INTERNAL_SERVER_ERROR, {
                             json!({
                                 "error": "Benchmark failed",
                                 "hint": "Work generation failure",
                             })
-                        })));
+                        }));
                     }
                 }
-                let end = PreciseTime::now();
-                let duration = start.to(end).num_milliseconds();
+                let duration = start.elapsed().as_millis();
                 let average = duration as u64 / count;
-                let _ = println!(
+                println!(
                     "Benchmark finished in {}ms , average {}ms / sample",
                     duration, average
                 );
-                Box::new(future::ok((StatusCode::Ok, {
+                Ok((StatusCode::OK, {
                     json!({
                         "difficulty": format!("{:x}", difficulty_l),
                         "multiplier": format!("{}", multiplier_l),
@@ -480,7 +459,7 @@ impl RpcService {
                         "average": format!("{}", average),
                         "hint": "Times in milliseconds",
                     })
-                })))
+                }))
             }
             RpcCommand::Status() => {
                 let state = self.work_state.0.lock();
@@ -489,48 +468,39 @@ impl RpcService {
                     "queue_size": format!("{}", queue_size),
                     "generating": if state.task_complete.load(atomic::Ordering::Relaxed) {"0"} else {"1"},
                 });
-                let _ = println!("Status {}", resp);
-                Box::new(Box::new(future::ok((StatusCode::Ok, resp))))
+                println!("Status {}", resp);
+                Ok((StatusCode::OK, resp))
             }
         }
     }
-}
 
-impl Service for RpcService {
-    type Request = Request;
-    type Response = Response;
-    type Error = hyper::Error;
-    type Future = Box<dyn Future<Item = Self::Response, Error = Self::Error>>;
-
-    fn call(&self, req: Request) -> Self::Future {
-        let res_fut = if *req.method() == hyper::Method::Post {
+    async fn handle_request(self, mut req: Request<Body>) -> hyper::Result<Response<Body>> {
+        let (status, body) = if *req.method() == hyper::Method::POST {
             let self_copy = self.clone();
-            Either::A(
-                req.body()
-                    .concat2()
-                    .map(move |chunk| serde_json::from_slice(chunk.as_ref()))
-                    .and_then(move |res| self_copy.process_req(res)),
-            )
+            let body = hyper::body::to_bytes(req.body_mut()).await?;
+            self_copy.process_req(body.as_ref()).await?
         } else {
-            Either::B(future::ok((
-                StatusCode::MethodNotAllowed,
+            (
+                StatusCode::METHOD_NOT_ALLOWED,
                 json!({
                     "error": "Can only POST requests",
                 }),
-            )))
+            )
         };
-        Box::new(res_fut.map(|(status, body)| {
-            let body = body.to_string();
-            Response::new()
-                .with_header(hyper::header::ContentLength(body.len() as u64))
-                .with_header(hyper::header::ContentType::json())
-                .with_body(body)
-                .with_status(status)
-        }))
+        let body_str = body.to_string();
+        let body_len = body_str.len();
+        let body = Body::from(body_str);
+        Ok(Response::builder()
+            .header(hyper::header::CONTENT_LENGTH, body_len)
+            .header(hyper::header::CONTENT_TYPE, "application/json")
+            .status(status)
+            .body(body)
+            .expect("Failed to build response"))
     }
 }
 
-fn main() {
+#[tokio::main]
+async fn main() {
     let args = clap::App::new("Nano work server")
         .version("1.0")
         .author("Lee Bousfield <ljbousfield@gmail.com>")
@@ -630,7 +600,8 @@ fn main() {
     let mut worker_handles = Vec::new();
     for _ in 0..cpu_threads {
         let work_state = work_state.clone();
-        let mut rng: rand::XorShiftRng = rand::thread_rng().gen();
+        let mut rng =
+            XorShiftRng::from_rng(rand::thread_rng()).expect("Failed to create XorShiftRng");
         let mut root = [0u8; 32];
         let mut difficulty = 0u64;
         let mut task_complete = Arc::new(AtomicBool::new(true));
@@ -669,7 +640,8 @@ fn main() {
     }
     for (gpu_i, mut gpu) in gpus.into_iter().enumerate() {
         let mut failed = false;
-        let mut rng: rand::XorShiftRng = rand::thread_rng().gen();
+        let mut rng =
+            XorShiftRng::from_rng(rand::thread_rng()).expect("Failed to create XorShiftRng");
         let mut root = [0u8; 32];
         let mut difficulty = 0u64;
         let work_state = work_state.clone();
@@ -714,7 +686,7 @@ fn main() {
             }
             let attempt = rng.gen();
             let mut out = [0u8; 8];
-            match gpu.try(&mut out, attempt) {
+            match gpu.run(&mut out, attempt) {
                 Ok(true) => {
                     if work_valid(root, out, difficulty).0 {
                         let mut state = work_state.0.lock();
@@ -768,17 +740,22 @@ fn main() {
         worker_handles.push(handle.thread().clone());
     }
 
-    let server = Http::new()
-        .bind(&listen_addr, move || {
-            Ok(RpcService {
-                work_state: work_state.clone(),
-            })
-        })
-        .expect("Failed to bind server");
+    let service = RpcService {
+        work_state: work_state.clone(),
+    };
+    let make_service = hyper::service::make_service_fn(|_| {
+        let service = service.clone();
+        async move {
+            Ok::<_, Infallible>(hyper::service::service_fn(move |req| {
+                service.clone().handle_request(req)
+            }))
+        }
+    });
+    let server = Server::bind(&listen_addr).serve(make_service);
     println!(
         "Configured for the live network with threshold {:x}",
         LIVE_DIFFICULTY
     );
     println!("Ready to receive requests on {}", listen_addr);
-    server.run().expect("Error running server");
+    server.await.expect("Failed to serve requests");
 }
