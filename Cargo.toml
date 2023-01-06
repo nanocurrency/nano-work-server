@@ -20,5 +20,5 @@ digest = "0.10.5"
 byteorder = "1.4.3"
 parking_lot = "0.12.1"
 chrono = "0.4.22"
-tokio = { version = "1.21.2", features = ["rt-multi-thread", "macros"] }
+tokio = { version = "1.23.1", features = ["rt-multi-thread", "macros"] }
 rand_xorshift = "0.3.0"
